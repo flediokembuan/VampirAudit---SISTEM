@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { api, firstError } from '../lib/api'
-import { number, relativeTime } from '../lib/format'
+import { number } from '../lib/format'
 import { ErrorState, PageLoader, ProgressBar } from '../components/ui'
 import { useToast } from '../components/ToastProvider'
 import type { AuditLog, Paginated, PanelOverview, Parameters, ProgressLab, Spec } from '../types'

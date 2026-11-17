@@ -7,7 +7,6 @@ import {
   Play,
   RefreshCw,
   Shield,
-  ShieldAlert,
   Zap,
 } from 'lucide-react'
 import { api, firstError } from '../lib/api'

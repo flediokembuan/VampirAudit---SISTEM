@@ -2,10 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
-  CheckCircle2,
   Eye,
   EyeOff,
-  GitCommit,
   KeyRound,
   Lock,
   RotateCcw,

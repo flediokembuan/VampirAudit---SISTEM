@@ -1,19 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Award,
-  CheckCircle2,
   Download,
   FileCheck,
-  FileSpreadsheet,
-  Globe,
   Leaf,
-  Layers,
   Monitor,
-  Printer,
-  Shield,
   Sliders,
-  TrendingDown,
-  Wallet,
   Zap,
 } from 'lucide-react'
 import { api, downloadFile, firstError } from '../lib/api'
