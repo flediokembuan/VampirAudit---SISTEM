@@ -1,362 +1,726 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowRight,
-  Bell,
+  AlertTriangle,
+  CheckCircle2,
   Eye,
   EyeOff,
+  GitCommit,
+  KeyRound,
   Lock,
-  Mail,
+  RotateCcw,
+  Shield,
   ShieldAlert,
+  Table,
   Zap,
 } from 'lucide-react'
 import { roleHome, useAuth } from '../auth/AuthContext'
 import { firstError } from '../lib/api'
 
-interface DemoAccount {
-  role: string
-  name: string
-  email: string
-  title: string
-  desc: string
-  code: string
-}
-
-const demoAccounts: DemoAccount[] = [
-  {
-    role: 'ADMIN',
-    name: 'Dosen Admin',
-    email: 'dosen.admin@unklab.ac.id',
-    title: 'Dosen Admin',
-    desc: 'Hak Akses Penuh',
-    code: 'L-02 Telemetri & L-06 RBAC',
-  },
-  {
-    role: 'AUDITOR',
-    name: 'Auditor Lapangan',
-    email: 'auditor@unklab.ac.id',
-    title: 'Auditor Lapangan',
-    desc: 'Inspeksi & QR Audit',
-    code: 'L-03 Form Input Lapangan',
-  },
-  {
-    role: 'MAINTENANCE',
-    name: 'Facility Maintenance',
-    email: 'maintenance@unklab.ac.id',
-    title: 'Facility Maint.',
-    desc: 'Beban MCB & Alert',
-    code: 'L-04 Mitigasi Trip & Fuse',
-  },
-  {
-    role: 'PIMPINAN',
-    name: 'Pimpinan Kampus',
-    email: 'pimpinan@unklab.ac.id',
-    title: 'Pimpinan Kampus',
-    desc: 'Ringkasan Eksekutif',
-    code: 'L-05 Biaya Listrik & ESG',
-  },
-]
+type SimulatorState = 'normal' | 'invalid_credentials' | 'account_locked' | 'empty_fields' | 'loading'
 
 export default function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
+
   const [email, setEmail] = useState('dosen.admin@unklab.ac.id')
   const [password, setPassword] = useState('Vampir#2026')
   const [showPassword, setShowPassword] = useState(false)
-  const [remember, setRemember] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [simState, setSimState] = useState<SimulatorState>('normal')
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    if (!email.trim() || !password.trim()) {
+      setError('Email institusi dan kata sandi wajib diisi.')
+      setSimState('empty_fields')
+      return
+    }
+
     setError('')
     setSubmitting(true)
+    setSimState('loading')
+
     try {
       const user = await login(email, password)
       navigate(roleHome[user.role], { replace: true })
     } catch (caught) {
       setError(firstError(caught))
+      setSimState('invalid_credentials')
     } finally {
       setSubmitting(false)
     }
   }
 
-  async function handleDemoSelect(account: DemoAccount) {
-    setEmail(account.email)
+  function handleSimulate(state: SimulatorState) {
+    setSimState(state)
+    switch (state) {
+      case 'invalid_credentials':
+        setError('Kredensial tidak cocok dengan database sivitas akademika UNKLAB.')
+        break
+      case 'account_locked':
+        setError('Akun ditangguhkan sementara: Terdeteksi 5 kali percobaan login gagal berturut-turut.')
+        break
+      case 'empty_fields':
+        setEmail('')
+        setPassword('')
+        setError('Email institusi dan kata sandi wajib diisi.')
+        break
+      case 'loading':
+        setError('')
+        setSubmitting(true)
+        setTimeout(() => {
+          setSubmitting(false)
+          setSimState('normal')
+        }, 3000)
+        break
+      case 'normal':
+        setEmail('dosen.admin@unklab.ac.id')
+        setPassword('Vampir#2026')
+        setError('')
+        setSubmitting(false)
+        break
+    }
+  }
+
+  function handleRoleClick(roleEmail: string) {
+    setEmail(roleEmail)
     setPassword('Vampir#2026')
     setError('')
-    setSubmitting(true)
-    try {
-      const user = await login(account.email, 'Vampir#2026')
-      navigate(roleHome[user.role], { replace: true })
-    } catch (caught) {
-      setError(firstError(caught))
-    } finally {
-      setSubmitting(false)
-    }
+    setSimState('normal')
   }
 
   return (
-    <div className="login-screen">
-      {/* Top Telemetry Institutional Bar (As in Stitch Screen 1) */}
-      <header className="topbar">
-        <div className="topbar-left">
-          <span className="campus-pill">
-            <span className="dot" /> GREEN CAMPUS UNKLAB
-          </span>
-          <span className="topbar-pipe">|</span>
-          <span className="telemetry-status">Grid Telemetry Active (220.4V avg)</span>
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: '#0c0e11',
+      color: '#f8fafc',
+      display: 'flex',
+      flexDirection: 'column',
+      fontFamily: "var(--font-body, 'Geist', sans-serif)",
+    }}>
+
+      {/* ── Top Bar with macOS Window Dots & Institutional Title ── */}
+      <header style={{
+        height: '46px',
+        backgroundColor: '#111316',
+        borderBottom: '1px solid #1e2430',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 20px',
+        fontSize: '11px',
+      }}>
+        {/* Left: 3 Mac-style dots + Title */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ef4444', display: 'inline-block' }} />
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f59e0b', display: 'inline-block' }} />
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#cbd5e1', fontWeight: 600 }}>
+            <Zap size={14} style={{ color: '#38bdf8' }} />
+            <strong style={{ letterSpacing: '0.04em', color: '#ffffff' }}>SISTEM AUDIT LISTRIK VAMPIR</strong>
+            <span style={{ color: '#475569' }}>|</span>
+            <span style={{ color: '#94a3b8' }}>Fakultas Ilmu Komputer · Universitas Klabat</span>
+          </div>
         </div>
 
-        <div className="topbar-right">
-          <button className="notif-bell" aria-label="Notifikasi">
-            <Bell size={16} />
-            <span className="notif-dot" />
-          </button>
-          <div className="user-profile-widget">
-            <div className="user-profile-copy">
-              <div className="user-profile-name">Dosen Admin</div>
-              <div className="user-profile-dept">Fakultas Ilmu Komputer</div>
-            </div>
-            <div className="user-avatar-badge">DA</div>
-          </div>
+        {/* Right Badges */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            backgroundColor: '#052e16', border: '1px solid #16a34a', borderRadius: '16px',
+            padding: '3px 10px', fontSize: '10px', fontWeight: 700, color: '#4ade80', letterSpacing: '0.05em',
+          }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22c55e', display: 'inline-block' }} />
+            GREEN CAMPUS UNKLAB
+          </span>
+
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            backgroundColor: '#0d131a', border: '1px solid #1e293b', borderRadius: '6px',
+            padding: '3px 9px', fontSize: '10.5px', fontFamily: 'var(--font-mono, monospace)', color: '#94a3b8',
+          }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} />
+            NODE 01-PROD
+          </span>
         </div>
       </header>
 
-      {/* Main Login Viewport */}
-      <div className="login-layout">
-        {/* Left Branding & Live Wave Telemetry */}
-        <section className="login-intro">
-          {/* Tag pills */}
-          <div className="login-tag-row">
-            <span className="login-tag">GREEN CAMPUS INITIATIVE</span>
-            <span className="login-tag">FILKOM • UNKLAB</span>
-            <span className="login-tag online">
-              <span className="badge-dot" /> Grid Online 220V
-            </span>
-          </div>
+      {/* ── Main Viewport (2 Columns) ── */}
+      <main style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '32px 24px',
+      }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '1160px',
+          display: 'grid',
+          gridTemplateColumns: '1.15fr 0.95fr',
+          gap: '24px',
+          alignItems: 'start',
+        }}>
 
-          {/* Logo & Platform Name */}
-          <div className="login-brand-stitch">
-            <div className="login-brand-icon">
-              <Zap size={24} fill="currentColor" strokeWidth={0} />
-            </div>
-            <div className="login-brand-text">
-              <h2>VampireMonitor UNKLAB</h2>
-              <p>Sistem Telemetri Konsumsi Energi &amp; Deteksi Beban Siluman</p>
-            </div>
-          </div>
-
-          {/* Headline */}
-          <h1 className="login-headline">
-            Pantau &amp; Hentikan Pemborosan Listrik Standby di{' '}
-            <span className="mint">6 Lab Komputer</span>
-          </h1>
-
-          <p className="login-subhead">
-            Sistem telemetri presisi tinggi untuk memitigasi konsumsi parasitik (vampire draw),
-            verifikasi integritas 240 unit workstation, dan mencegah trip MCB fasa tunggal secara
-            real-time pada Gedung Kuliah Terpadu Lt. 3.
-          </p>
-
-          {/* Live Wave Chart Box */}
-          <div className="login-wave-tile">
-            <div className="login-wave-header">
-              <span className="login-wave-title">
-                <span className="badge-dot" style={{ backgroundColor: '#10b981' }} />
-                POLA BEBAN VAMPIR HARIAN (00:00 - 06:00 WITA)
-              </span>
-              <span className="login-wave-val">
-                Standby Aktif: <strong>4.82 kW</strong>
+          {/* ══════════════════════════════════════════════════════════
+              LEFT COLUMN: Institutional Scope & Methodology
+              ══════════════════════════════════════════════════════════ */}
+          <div style={{
+            backgroundColor: '#111316',
+            border: '1px solid #1e2430',
+            borderRadius: '14px',
+            padding: '28px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+          }}>
+            
+            {/* Tag badge */}
+            <div>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                backgroundColor: '#042f2e', border: '1px solid #0d9488', borderRadius: '14px',
+                padding: '3px 10px', fontSize: '10px', fontWeight: 700, color: '#2dd4bf', letterSpacing: '0.06em',
+              }}>
+                <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#14b8a6' }} />
+                GREEN CAMPUS UNKLAB • FIK
               </span>
             </div>
 
-            {/* SVG Wave graphic with anomaly dot */}
-            <svg
-              className="login-wave-chart"
-              viewBox="0 0 500 70"
-              preserveAspectRatio="none"
-              fill="none"
-            >
-              <defs>
-                <linearGradient id="waveGlow" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M 0 50 Q 70 50, 120 45 T 240 40 T 310 18 T 370 12 T 420 40 T 500 48 L 500 70 L 0 70 Z"
-                fill="url(#waveGlow)"
-              />
-              <path
-                d="M 0 50 Q 70 50, 120 45 T 240 40 T 310 18 T 370 12 T 420 40 T 500 48"
-                stroke="#38bdf8"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-              {/* Anomaly circle at peak */}
-              <circle cx="340" cy="22" r="5" fill="#f97316" stroke="#ffffff" strokeWidth="2" />
-            </svg>
-
-            <div className="login-wave-footer">
-              <span>Lab 301-306 Total Idle State</span>
-              <span style={{ color: '#10b981' }}>Anomali Terkendali (92% Normal)</span>
-            </div>
-          </div>
-
-          {/* 3 Metric Cards Row */}
-          <div className="login-tri-cards">
-            <div className="login-tri-card blue">
-              <div className="tri-card-label">INVENTARIS UNIT</div>
-              <div className="tri-card-val">240 <span style={{ fontSize: '11px', color: '#94a3b8' }}>PC</span></div>
-              <div className="tri-card-sub">6 Lab Terpadu Lt. 3</div>
+            {/* Title & Description */}
+            <div>
+              <h1 style={{
+                fontSize: '28px',
+                fontWeight: 800,
+                color: '#ffffff',
+                letterSpacing: '-0.02em',
+                lineHeight: 1.25,
+                margin: '0 0 10px',
+              }}>
+                Sistem Audit Listrik Vampir UNKLAB
+              </h1>
+              <p style={{
+                fontSize: '12.5px',
+                color: '#94a3b8',
+                lineHeight: 1.55,
+                margin: 0,
+              }}>
+                Platform terpadu pemantauan dan audit kehilangan daya standby (vampire load) pada laboratorium komputer Fakultas Ilmu Komputer Universitas Klabat.
+              </p>
             </div>
 
-            <div className="login-tri-card amber">
-              <div className="tri-card-label">BATAS BEBAN MCB</div>
-              <div className="tri-card-val">10A <span style={{ fontSize: '12px', color: '#64748b' }}>/ 40A</span></div>
-              <div className="tri-card-sub">2.2kW PC • 8.8kW AC</div>
-            </div>
-
-            <div className="login-tri-card green">
-              <div className="tri-card-label">TARGET EFISIENSI</div>
-              <div className="tri-card-val" style={{ color: '#4edea3' }}>-6.5%</div>
-              <div className="tri-card-sub">Vampire Draw Reduksi</div>
-            </div>
-          </div>
-        </section>
-
-        {/* Right Login Panel */}
-        <section className="login-panel-stitch">
-          <div className="login-card-head">
-            <h3>Masuk ke Portal Audit</h3>
-            <span className="badge badge-success">
-              <span className="badge-dot" /> SSO Ready
-            </span>
-          </div>
-          <p className="login-card-desc">
-            Autentikasi akun institusi UNKLAB atau pilih simulasi peran operasional.
-          </p>
-
-          <form onSubmit={handleSubmit}>
-            <div className="field">
-              <div className="field-label-row">
-                <label htmlFor="loginEmail">EMAIL / NIM / NIDN</label>
-                <span className="field-hint-text">UNKLAB Single Sign-On</span>
+            {/* 2-Column Stat Box */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '16px',
+              backgroundColor: '#0d0f12',
+              border: '1px solid #1e2430',
+              borderRadius: '10px',
+              padding: '16px 18px',
+            }}>
+              {/* Stat 1: Cakupan Audit */}
+              <div>
+                <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.08em', color: '#64748b', textTransform: 'uppercase' }}>
+                  CAKUPAN AUDIT
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', margin: '4px 0 2px' }}>
+                  <span style={{ fontSize: '32px', fontWeight: 900, fontFamily: 'var(--font-mono, monospace)', color: '#ffffff' }}>
+                    6
+                  </span>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>Lab Komputer</span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#64748b' }}>
+                  Lab 1 Komputer Dasar s/d Lab 6 Riset IoT
+                </div>
               </div>
-              <div className="input-icon-wrap">
-                <Mail size={16} />
-                <input
-                  id="loginEmail"
-                  name="email"
-                  className="input"
-                  type="email"
-                  autoComplete="username"
-                  spellCheck={false}
-                  enterKeyHint="next"
-                  placeholder="dosen.admin@unklab.ac.id"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  aria-invalid={Boolean(error)}
-                  required
-                />
+
+              {/* Stat 2: Perangkat Terdata */}
+              <div>
+                <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.08em', color: '#64748b', textTransform: 'uppercase' }}>
+                  PERANGKAT TERDATA
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', margin: '4px 0 2px' }}>
+                  <span style={{ fontSize: '32px', fontWeight: 900, fontFamily: 'var(--font-mono, monospace)', color: '#34d399' }}>
+                    240
+                  </span>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>Total PC Workstation</span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#64748b' }}>
+                  Rata-rata 35-40 unit aktif per lab
+                </div>
               </div>
             </div>
 
-            <div className="field">
-              <div className="field-label-row">
-                <label htmlFor="loginPassword">KATA SANDI</label>
-                <a href="#forgot" className="field-hint-text" style={{ color: '#38bdf8' }} onClick={(e) => e.preventDefault()}>
-                  Lupa Sandi?
-                </a>
+            {/* Metodologi Audit Standar Box */}
+            <div style={{
+              backgroundColor: '#0d0f12',
+              border: '1px solid #1e2430',
+              borderRadius: '10px',
+              padding: '14px 16px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <Table size={14} style={{ color: '#38bdf8' }} />
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#ffffff' }}>
+                  Metodologi Audit Standar
+                </span>
               </div>
-              <div className="input-icon-wrap">
-                <Lock size={16} />
-                <input
-                  id="loginPassword"
-                  name="password"
-                  className="input"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  enterKeyHint="done"
-                  placeholder="Masukkan kata sandi"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  aria-invalid={Boolean(error)}
-                  required
-                />
+              <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0, lineHeight: 1.5, fontFamily: 'var(--font-mono, monospace)' }}>
+                Audit manual &amp; kalkulasi standar: daya standby 5 W/unit, beban aktif 150 W, tarif PLN Rp 1.444,70/kWh, faktor emisi 0,78 kgCO2e/kWh.
+              </p>
+            </div>
+
+            {/* Informasi Alur Peran Box */}
+            <div style={{
+              backgroundColor: '#0d0f12',
+              border: '1px solid #1e2430',
+              borderRadius: '10px',
+              padding: '14px 16px',
+            }}>
+              <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.08em', color: '#64748b', marginBottom: '12px' }}>
+                ⑂ INFORMASI ALUR PERAN • PENGARAHAN RUTE OTOMATIS
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                {/* Role 1: Dosen PJ / Admin */}
                 <button
                   type="button"
-                  className="password-toggle"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
-                  aria-pressed={showPassword}
+                  onClick={() => handleRoleClick('dosen.admin@unklab.ac.id')}
+                  style={{
+                    background: email === 'dosen.admin@unklab.ac.id' ? '#1e293b' : 'transparent',
+                    border: '1px solid #1e2430',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
                 >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-
-            <div className="login-remember-row">
-              <label className="login-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                  style={{ accentColor: '#10b981' }}
-                />
-                <span>Ingat sesi saya di terminal ini</span>
-              </label>
-              <span className="mono" style={{ fontSize: '11px', color: '#64748b' }}>TLS 1.3</span>
-            </div>
-
-            {error && (
-              <div className="inline-error" role="alert" aria-live="polite" style={{ marginBottom: '14px' }}>
-                <ShieldAlert size={16} />
-                <span>{error}</span>
-              </div>
-            )}
-
-            <button type="submit" className="login-submit-btn" disabled={submitting}>
-              <ArrowRight size={18} />
-              <span>{submitting ? 'Memverifikasi Kredensial...' : 'Masuk ke Sistem Telemetri'}</span>
-            </button>
-          </form>
-
-          {/* RBAC Simulation Section */}
-          <div className="rbac-section-title">
-            <span>AKSES CEPAT SIMULASI PERAN (RBAC)</span>
-          </div>
-
-          <div className="rbac-demo-grid">
-            {demoAccounts.map((acc) => {
-              const isSelected = email === acc.email
-              return (
-                <button
-                  key={acc.email}
-                  type="button"
-                  className={`rbac-demo-card ${isSelected ? 'selected' : ''}`}
-                  onClick={() => handleDemoSelect(acc)}
-                >
-                  <div className="rbac-card-title">
-                    <span>{acc.title}</span>
-                    <ArrowRight size={13} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#38bdf8' }} />
+                    <strong style={{ fontSize: '11px', color: '#ffffff' }}>Dosen PJ / Admin</strong>
                   </div>
-                  <div className="rbac-card-desc">{acc.desc}</div>
-                  <div className="rbac-card-sub">{acc.code}</div>
+                  <div style={{ fontSize: '9.5px', color: '#94a3b8', marginTop: '3px', fontFamily: 'var(--font-mono, monospace)' }}>
+                    L-02 Dasbor Energi • L-03 Master Data
+                  </div>
                 </button>
-              )
-            })}
+
+                {/* Role 2: Auditor Lapangan */}
+                <button
+                  type="button"
+                  onClick={() => handleRoleClick('auditor@unklab.ac.id')}
+                  style={{
+                    background: email === 'auditor@unklab.ac.id' ? '#1e293b' : 'transparent',
+                    border: '1px solid #1e2430',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#34d399' }} />
+                    <strong style={{ fontSize: '11px', color: '#ffffff' }}>Auditor Lapangan</strong>
+                  </div>
+                  <div style={{ fontSize: '9.5px', color: '#34d399', marginTop: '3px', fontFamily: 'var(--font-mono, monospace)' }}>
+                    L-04 Fast-Input Audit
+                  </div>
+                </button>
+
+                {/* Role 3: Facility Maintenance */}
+                <button
+                  type="button"
+                  onClick={() => handleRoleClick('maintenance@unklab.ac.id')}
+                  style={{
+                    background: email === 'maintenance@unklab.ac.id' ? '#1e293b' : 'transparent',
+                    border: '1px solid #1e2430',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f97316' }} />
+                    <strong style={{ fontSize: '11px', color: '#ffffff' }}>Facility Maintenance</strong>
+                  </div>
+                  <div style={{ fontSize: '9.5px', color: '#f97316', marginTop: '3px', fontFamily: 'var(--font-mono, monospace)' }}>
+                    L-05 Monitoring MCB
+                  </div>
+                </button>
+
+                {/* Role 4: Pimpinan Kampus */}
+                <button
+                  type="button"
+                  onClick={() => handleRoleClick('pimpinan@unklab.ac.id')}
+                  style={{
+                    background: email === 'pimpinan@unklab.ac.id' ? '#1e293b' : 'transparent',
+                    border: '1px solid #1e2430',
+                    borderRadius: '8px',
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#a78bfa' }} />
+                    <strong style={{ fontSize: '11px', color: '#ffffff' }}>Pimpinan Kampus</strong>
+                  </div>
+                  <div style={{ fontSize: '9.5px', color: '#94a3b8', marginTop: '3px', fontFamily: 'var(--font-mono, monospace)' }}>
+                    L-06 Eksekutif • PDF
+                  </div>
+                </button>
+              </div>
+            </div>
+
           </div>
 
-          <div className="login-footer-copy">
-            <div>© 2025 Universitas Klabat — Green Campus Telemetry Protocol v2.4</div>
-            <div style={{ color: '#4b535d', marginTop: '2px' }}>
-              Fakultas Ilmu Komputer • Smart Energy Management Unit
+          {/* ══════════════════════════════════════════════════════════
+              RIGHT COLUMN: Login Form + Demo Simulator State
+              ══════════════════════════════════════════════════════════ */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            
+            {/* ── Top Box: Masuk ke Sistem Form ── */}
+            <div style={{
+              backgroundColor: '#111316',
+              border: '1px solid #1e2430',
+              borderRadius: '14px',
+              padding: '24px 26px',
+            }}>
+              
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                <div>
+                  <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#ffffff', margin: '0 0 4px' }}>
+                    Masuk ke Sistem
+                  </h2>
+                  <p style={{ fontSize: '11.5px', color: '#94a3b8', margin: 0 }}>
+                    Gunakan akun kredensial institusi resmi UNKLAB
+                  </p>
+                </div>
+
+                <div style={{
+                  width: '32px', height: '32px', borderRadius: '50%',
+                  backgroundColor: '#1a1f2e', border: '1px solid #2d3748',
+                  display: 'grid', placeItems: 'center', color: '#94a3b8',
+                }}>
+                  <Shield size={16} />
+                </div>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                
+                {/* Field 1: Email */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label htmlFor="loginEmail" style={{ fontSize: '11px', fontWeight: 700, color: '#cbd5e1', letterSpacing: '0.04em' }}>
+                      Email Institusi
+                    </label>
+                    <span style={{ fontSize: '10.5px', color: '#64748b', fontFamily: 'var(--font-mono, monospace)' }}>
+                      Domain @unklab.ac.id
+                    </span>
+                  </div>
+
+                  <div style={{ position: 'relative' }}>
+                    <span style={{
+                      position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
+                      color: '#64748b', fontSize: '13px', fontFamily: 'var(--font-mono, monospace)', pointerEvents: 'none',
+                    }}>
+                      @
+                    </span>
+                    <input
+                      id="loginEmail"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="nama@unklab.ac.id"
+                      required
+                      style={{
+                        width: '100%',
+                        backgroundColor: '#0c0e11',
+                        border: '1px solid #242c38',
+                        borderRadius: '8px',
+                        padding: '10px 14px 10px 32px',
+                        fontSize: '12.5px',
+                        color: '#ffffff',
+                        fontFamily: 'var(--font-mono, monospace)',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Field 2: Password */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label htmlFor="loginPassword" style={{ fontSize: '11px', fontWeight: 700, color: '#cbd5e1', letterSpacing: '0.04em' }}>
+                      Kata Sandi
+                    </label>
+                  </div>
+
+                  <div style={{ position: 'relative' }}>
+                    <KeyRound size={14} style={{
+                      position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
+                      color: '#64748b', pointerEvents: 'none',
+                    }} />
+                    <input
+                      id="loginPassword"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••••••"
+                      required
+                      style={{
+                        width: '100%',
+                        backgroundColor: '#0c0e11',
+                        border: '1px solid #242c38',
+                        borderRadius: '8px',
+                        padding: '10px 38px 10px 34px',
+                        fontSize: '12.5px',
+                        color: '#ffffff',
+                        fontFamily: 'var(--font-mono, monospace)',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label="Toggle password"
+                      style={{
+                        position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0,
+                      }}
+                    >
+                      {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Error Banner */}
+                {error && (
+                  <div style={{
+                    backgroundColor: '#450a0a',
+                    border: '1px solid #ef4444',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    fontSize: '11px',
+                    color: '#fca5a5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}>
+                    <ShieldAlert size={14} style={{ flexShrink: 0 }} />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                {/* Submit Button */}
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  style={{
+                    marginTop: '4px',
+                    width: '100%',
+                    height: '42px',
+                    backgroundColor: '#34d399',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#064e3b',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    letterSpacing: '0.02em',
+                    cursor: submitting ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    transition: 'opacity 0.15s ease',
+                  }}
+                  onMouseOver={(e) => { if (!submitting) e.currentTarget.style.opacity = '0.92' }}
+                  onMouseOut={(e) => { e.currentTarget.style.opacity = '1' }}
+                >
+                  <span>→]</span>
+                  <span>{submitting ? 'Memverifikasi Kredensial...' : 'Masuk ke Sistem →'}</span>
+                </button>
+
+                {/* Security encryption text */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  fontSize: '10.5px',
+                  color: '#64748b',
+                  marginTop: '4px',
+                }}>
+                  <Lock size={12} style={{ color: '#2dd4bf' }} />
+                  <span>Koneksi aman terenkripsi TLS 1.3 FIK-UNKLAB</span>
+                </div>
+              </form>
             </div>
+
+            {/* ── Bottom Box: DEMO SIMULATOR STATE AUTENTIKASI ── */}
+            <div style={{
+              backgroundColor: '#111316',
+              border: '1px solid #1e2430',
+              borderRadius: '14px',
+              padding: '16px 20px',
+            }}>
+              
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <AlertTriangle size={13} style={{ color: '#f59e0b' }} />
+                  <span style={{ fontSize: '10px', fontWeight: 800, letterSpacing: '0.08em', color: '#cbd5e1' }}>
+                    DEMO SIMULATOR STATE AUTENTIKASI
+                  </span>
+                </div>
+
+                <span style={{
+                  fontSize: '9.5px',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  backgroundColor: '#0d131a',
+                  border: '1px solid #242c38',
+                  borderRadius: '4px',
+                  padding: '2px 8px',
+                  color: simState === 'normal' ? '#10b981' : '#f59e0b',
+                }}>
+                  State: {simState === 'normal' ? 'Normal' : simState === 'invalid_credentials' ? 'Kredensial Salah' : simState === 'account_locked' ? 'Akun Terkunci' : simState === 'empty_fields' ? 'Field Kosong' : 'Loading'}
+                </span>
+              </div>
+
+              {/* 4 State Buttons (2x2 Grid) */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                
+                {/* State 1 */}
+                <button
+                  type="button"
+                  onClick={() => handleSimulate('invalid_credentials')}
+                  style={{
+                    backgroundColor: simState === 'invalid_credentials' ? '#1e2430' : '#0d0f12',
+                    border: `1px solid ${simState === 'invalid_credentials' ? '#ef4444' : '#1e2430'}`,
+                    borderRadius: '6px',
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#f87171' }}>⊗ State 1</div>
+                  <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '1px' }}>Kredensial Salah</div>
+                </button>
+
+                {/* State 2 */}
+                <button
+                  type="button"
+                  onClick={() => handleSimulate('account_locked')}
+                  style={{
+                    backgroundColor: simState === 'account_locked' ? '#1e2430' : '#0d0f12',
+                    border: `1px solid ${simState === 'account_locked' ? '#f59e0b' : '#1e2430'}`,
+                    borderRadius: '6px',
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#fbbf24' }}>⚙ State 2</div>
+                  <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '1px' }}>Akun Terkunci</div>
+                </button>
+
+                {/* State 3 */}
+                <button
+                  type="button"
+                  onClick={() => handleSimulate('empty_fields')}
+                  style={{
+                    backgroundColor: simState === 'empty_fields' ? '#1e2430' : '#0d0f12',
+                    border: `1px solid ${simState === 'empty_fields' ? '#38bdf8' : '#1e2430'}`,
+                    borderRadius: '6px',
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#38bdf8' }}>=✗ State 3</div>
+                  <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '1px' }}>Field Kosong</div>
+                </button>
+
+                {/* State 4 */}
+                <button
+                  type="button"
+                  onClick={() => handleSimulate('loading')}
+                  style={{
+                    backgroundColor: simState === 'loading' ? '#1e2430' : '#0d0f12',
+                    border: `1px solid ${simState === 'loading' ? '#34d399' : '#1e2430'}`,
+                    borderRadius: '6px',
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#34d399' }}>↻ State 4</div>
+                  <div style={{ fontSize: '9px', color: '#94a3b8', marginTop: '1px' }}>Loading Verifikasi</div>
+                </button>
+              </div>
+
+              {/* Reset link */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleSimulate('normal')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#64748b',
+                    fontSize: '10.5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                  onMouseOver={(e) => (e.currentTarget.style.color = '#38bdf8')}
+                  onMouseOut={(e) => (e.currentTarget.style.color = '#64748b')}
+                >
+                  <RotateCcw size={11} />
+                  <span>Reset ke Form Awal</span>
+                </button>
+              </div>
+            </div>
+
           </div>
-        </section>
-      </div>
+
+        </div>
+      </main>
+
+      {/* ── Footer ── */}
+      <footer style={{
+        height: '42px',
+        backgroundColor: '#0c0e11',
+        borderTop: '1px solid #1e2430',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 24px',
+        fontSize: '11px',
+        color: '#64748b',
+      }}>
+        <span>© 2024 Fakultas Ilmu Komputer, Universitas Klabat. Inisiatif Green Campus &amp; Efisiensi Daya Vampir.</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }} />
+          <span>Sistem Siap (Offline-First Ready)</span>
+          <span>|</span>
+          <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>Protokol IoT FIK-v2.4</span>
+        </div>
+      </footer>
     </div>
   )
 }

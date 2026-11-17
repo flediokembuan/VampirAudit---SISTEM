@@ -1,17 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import {
-  AlertTriangle,
-  ArrowRight,
-  CheckCircle2,
-  Clock,
-  Cpu,
-  Monitor,
-  Power,
-  Wrench,
-  Zap,
-} from 'lucide-react'
 import { api, firstError } from '../lib/api'
-import { number, relativeTime, rupiah } from '../lib/format'
+import { number, relativeTime } from '../lib/format'
 import { ErrorState, PageLoader, ProgressBar } from '../components/ui'
 import { useToast } from '../components/ToastProvider'
 import type { AuditLog, Paginated, PanelOverview, Parameters, ProgressLab, Spec } from '../types'
@@ -21,6 +10,14 @@ type PcStatus = 'off' | 'normal' | 'standby' | 'anomaly' | 'unverified'
 
 function pcCodeFromNumber(num: number): string {
   return `PC-${String(num).padStart(2, '0')}`
+}
+
+function formatTime(isoStr: string): string {
+  try {
+    return new Date(isoStr).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  } catch {
+    return '--:--:--'
+  }
 }
 
 export default function AuditPage() {
@@ -33,8 +30,11 @@ export default function AuditPage() {
   const [selectedPc, setSelectedPc] = useState<number>(29)
   const selectedPcRef = useRef(29)
   const [selectedSpecId, setSelectedSpecId] = useState<number>(1)
-  const [gridFilter, setGridFilter] = useState<'ALL' | 'UNVERIFIED' | 'PROBLEM'>('ALL')
+  const [gridFilter] = useState<'ALL' | 'UNVERIFIED' | 'PROBLEM'>('ALL')
   const [condition, setCondition] = useState<UnitCondition>('OFF')
+  const [isFaulty, setIsFaulty] = useState(false)
+  const [ramGb, setRamGb] = useState<number | null>(null)
+  const [storageGb, setStorageGb] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -75,9 +75,14 @@ export default function AuditPage() {
           if (pcAudit) {
             setSelectedSpecId(pcAudit.master_pc_spec_id)
             setCondition(pcAudit.is_faulty ? 'ANOMALY' : pcAudit.spec.standby_watt === 0 ? 'OFF' : 'NORMAL')
+            setIsFaulty(pcAudit.is_faulty)
+            setRamGb(pcAudit.spec.ram_gb)
+            setStorageGb(pcAudit.spec.storage_gb)
             setAuditNote(pcAudit.fault_note ?? '')
           } else {
             setSelectedSpecId(res.specs[0].id)
+            setRamGb(res.specs[0]?.ram_gb ?? null)
+            setStorageGb(res.specs[0]?.storage_gb ?? null)
           }
         }
         setError('')
@@ -153,6 +158,17 @@ export default function AuditPage() {
 
   const selectedAudit = auditMap.get(pcCodeFromNumber(selectedPc)) ?? null
 
+  // Unique RAM and SSD values derived from specs
+  const uniqueRamValues = useMemo(() => {
+    const vals = Array.from(new Set(specs.map((s) => s.ram_gb))).sort((a, b) => a - b)
+    return vals
+  }, [specs])
+
+  const uniqueStorageValues = useMemo(() => {
+    const vals = Array.from(new Set(specs.map((s) => s.storage_gb))).sort((a, b) => a - b)
+    return vals
+  }, [specs])
+
   const applyPcState = useCallback(
     (pcNum: number, auditsSource: AuditLog[] = labAudits) => {
       selectedPcRef.current = pcNum
@@ -161,14 +177,22 @@ export default function AuditPage() {
       if (found) {
         setSelectedSpecId(found.master_pc_spec_id)
         setCondition(found.is_faulty ? 'ANOMALY' : found.spec.standby_watt === 0 ? 'OFF' : 'NORMAL')
+        setIsFaulty(found.is_faulty)
+        setRamGb(found.spec.ram_gb)
+        setStorageGb(found.spec.storage_gb)
         setAuditNote(found.fault_note ?? '')
         setCheckKabel(Boolean(found.is_faulty && found.fault_note?.toLowerCase().includes('kabel')))
         setCheckStopkontak(Boolean(found.is_faulty && found.fault_note?.toLowerCase().includes('stopkontak')))
         setCheckPsu(Boolean(found.is_faulty && found.fault_note?.toLowerCase().includes('psu')))
         setCheckShutdown(Boolean(found.is_faulty && found.fault_note?.toLowerCase().includes('shutdown')))
       } else {
-        if (specs.length > 0) setSelectedSpecId(specs[0].id)
+        if (specs.length > 0) {
+          setSelectedSpecId(specs[0].id)
+          setRamGb(specs[0].ram_gb)
+          setStorageGb(specs[0].storage_gb)
+        }
         setCondition('OFF')
+        setIsFaulty(false)
         setAuditNote('')
         setCheckKabel(false)
         setCheckStopkontak(false)
@@ -179,28 +203,21 @@ export default function AuditPage() {
     [labAudits, specs],
   )
 
-  const labPanelSocket = useMemo(() => {
-    const labPanel = panelOverview?.labs.find((l) => l.id === selectedLabId)
-    return labPanel?.panels.find((p) => p.group_type === 'SOCKET') ?? null
-  }, [panelOverview, selectedLabId])
+  // Find best matching spec from selected ram+storage
+  const matchedSpec = useMemo(() => {
+    if (ramGb === null || storageGb === null) return selectedSpec
+    const match = specs.find((s) => s.ram_gb === ramGb && s.storage_gb === storageGb)
+    return match ?? selectedSpec
+  }, [specs, ramGb, storageGb, selectedSpec])
 
-  const labStandbySummary = useMemo(() => {
-    const totalWatt = labAudits.reduce((sum, item) => sum + item.spec.standby_watt, 0)
-    const params = panelOverview?.parameters
-    const hours = params?.standby_hours_per_day ?? 8
-    const days = params?.standby_days_per_month ?? 30
-    const tariff = params?.tariff_per_kwh ?? 1444.7
-    const monthlyCost = ((totalWatt * hours * days) / 1000) * tariff
-    const activeStandbyUnits = labAudits.filter((item) => item.spec.standby_watt > 0).length
-    return { totalWatt, monthlyCost, activeStandbyUnits }
-  }, [labAudits, panelOverview])
-
-  async function handleSaveNext(event: FormEvent) {
+  async function handleSave(event: FormEvent) {
     event.preventDefault()
-    if (!selectedSpec) return
+    const spec = matchedSpec ?? selectedSpec
+    if (!spec) return
 
     setSaving(true)
     const pcCode = pcCodeFromNumber(selectedPc)
+    const isAnomalyNow = isFaulty
     const checklistTags = [
       checkKabel ? 'Kabel Power Terkelupas' : '',
       checkStopkontak ? 'Stopkontak Meja Longgar/Sparking' : '',
@@ -208,36 +225,42 @@ export default function AuditPage() {
       checkShutdown ? 'Gagal Shutdown Otomatis' : '',
     ].filter(Boolean)
 
-    const combinedNote =
-      condition === 'ANOMALY'
-        ? [checklistTags.join(', '), auditNote.trim()].filter(Boolean).join(' — ') ||
-          'Anomali kelistrikan terdeteksi pada workstation.'
-        : null
+    const combinedNote = isAnomalyNow
+      ? [checklistTags.join(', '), auditNote.trim()].filter(Boolean).join(' — ') ||
+        'Anomali kelistrikan terdeteksi pada workstation.'
+      : null
+
+    // Determine condition from isFaulty toggle
+    const effectiveCondition: UnitCondition = isAnomalyNow ? 'ANOMALY' : condition === 'ANOMALY' ? 'NORMAL' : condition
 
     const targetWatt =
-      condition === 'OFF' ? 0 : condition === 'NORMAL' ? selectedSpec.standby_watt : Math.max(selectedSpec.standby_watt, 14.2)
+      effectiveCondition === 'OFF'
+        ? 0
+        : effectiveCondition === 'NORMAL'
+          ? spec.standby_watt
+          : Math.max(spec.standby_watt, 14.2)
 
     try {
       if (selectedAudit) {
         await api.patch(`/audits/${selectedAudit.id}`, {
           pc_number: pcCode,
-          master_pc_spec_id: selectedSpec.id,
+          master_pc_spec_id: spec.id,
           standby_watt_snapshot: targetWatt,
-          is_faulty: condition === 'ANOMALY',
+          is_faulty: isAnomalyNow,
           fault_note: combinedNote,
         })
       } else {
         await api.post('/audits', {
           lab_room_id: selectedLabId,
           pc_number: pcCode,
-          master_pc_spec_id: selectedSpec.id,
+          master_pc_spec_id: spec.id,
           standby_watt_snapshot: targetWatt,
-          is_faulty: condition === 'ANOMALY',
+          is_faulty: isAnomalyNow,
           fault_note: combinedNote,
         })
       }
 
-      if (condition === 'ANOMALY') {
+      if (isAnomalyNow) {
         await api.post('/incidents', {
           lab_room_id: selectedLabId,
           description: `${pcCode} — ${combinedNote}`,
@@ -255,6 +278,9 @@ export default function AuditPage() {
       setSaving(false)
     }
   }
+
+  // Keep handleSaveNext for backward compat (alias)
+  const handleSaveNext = handleSave
 
   async function handleReportOutlet() {
     setReportingOutlet(true)
@@ -279,524 +305,529 @@ export default function AuditPage() {
     return <ErrorState message={error} onRetry={() => void loadLabData(selectedLabId)} />
   }
 
-  const deskRow = Math.ceil(selectedPc / 8)
-  const deskSector = String.fromCharCode(64 + deskRow)
-  const recentAudits = labAudits.slice(0, 4)
+  const savedCount = allPcs.filter((n) => {
+    const st = getPcStatus(n)
+    return st === 'normal' || st === 'off' || st === 'standby'
+  }).length
+  const faultyCount = pcStats.anomaly
+  const remainCount = pcStats.unverified
+  const doneCount = savedCount + faultyCount
+  const progressPercent = capacity > 0 ? Math.round((doneCount / capacity) * 100) : 0
+
+  const recentAudits = [...labAudits].sort((a, b) => new Date(b.audited_at).getTime() - new Date(a.audited_at).getTime()).slice(0, 5)
+
+  // PC grid status colors
+  function getCellStyle(pcNum: number, isActive: boolean): React.CSSProperties {
+    if (isActive) {
+      return { background: '#0369a1', border: '2px solid #38bdf8', color: '#ffffff' }
+    }
+    const st = getPcStatus(pcNum)
+    if (st === 'anomaly') return { background: '#7f1d1d', border: '1px solid #ef4444', color: '#fca5a5' }
+    if (st === 'normal' || st === 'off' || st === 'standby') return { background: '#14532d', border: '1px solid #22c55e', color: '#86efac' }
+    return { background: '#1e2129', border: '1px solid #374151', color: '#6b7280' }
+  }
+
+  function getCellSpecText(pcNum: number): string {
+    const audit = auditMap.get(pcCodeFromNumber(pcNum))
+    if (!audit) return '—'
+    if (audit.is_faulty) return 'RUSAK'
+    return `${audit.spec.ram_gb}|${audit.spec.storage_gb}`
+  }
+
+  const pcCode = pcCodeFromNumber(selectedPc)
+  const labName = currentLab?.name ?? 'Lab 2'
+  const labLocation = currentLab?.location ?? 'FIK Building Lt. 2'
 
   return (
-    <>
-      <div className="page-head" style={{ marginBottom: '16px' }}>
-        <div>
-          <div className="eyebrow" style={{ color: '#94a3b8' }}>
-            AUDIT LAPANGAN &gt; FORM FAST-INPUT WORKSTATION
-          </div>
-          <h1>Audit Cepat Kelistrikan Meja Laboratorium &amp; Validasi Standby</h1>
+    <div style={{ display: 'flex', gap: '16px', minHeight: 'calc(100vh - 80px)', padding: '16px' }}>
+
+      {/* ========== PANEL KIRI ========== */}
+      <div style={{ width: '320px', minWidth: '300px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+        {/* Top badges */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: '5px',
+            background: '#052e16', border: '1px solid #16a34a', borderRadius: '20px',
+            padding: '4px 10px', fontSize: '10px', fontWeight: 700, color: '#4ade80', letterSpacing: '0.05em'
+          }}>
+            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+            GREEN CAMPUS UNKLAB
+          </span>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: '5px',
+            background: '#1a1f2e', border: '1px solid #3b82f6', borderRadius: '20px',
+            padding: '4px 10px', fontSize: '10px', fontWeight: 700, color: '#93c5fd', letterSpacing: '0.05em'
+          }}>
+            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#3b82f6', display: 'inline-block' }} />
+            Sesi Auditor Aktif
+          </span>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-          <label htmlFor="auditLabSelect" className="visually-hidden">Pilih Ruang Laboratorium</label>
-          <select
-            id="auditLabSelect"
-            name="lab_room_id"
-            className="input"
-            style={{
-              width: '300px',
-              height: '38px',
-              fontSize: '12.5px',
-              fontWeight: 700,
-              backgroundColor: '#14161a',
-              color: '#ffffff',
-            }}
-            value={selectedLabId}
-            onChange={(e) => {
-              selectedPcRef.current = 1
-              setSelectedLabId(Number(e.target.value))
-              setSelectedPc(1)
-            }}
-          >
-            {progressLabs.map((lab) => (
-              <option key={lab.id} value={lab.id}>
-                {lab.name} ({lab.capacity} Unit PC)
-              </option>
-            ))}
-          </select>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
-            <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span className="badge-dot" style={{ backgroundColor: '#10b981' }} />
-              Terhubung Database Live
-            </span>
-            <span style={{ color: '#64748b' }}>{currentLab?.location ?? 'Gedung FIK'}</span>
+        {/* Lab selector card */}
+        <div style={{ background: '#14161a', border: '1px solid #26292e', borderRadius: '12px', padding: '14px' }}>
+          <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.08em', color: '#64748b', marginBottom: '8px' }}>
+            LOKASI PENGUJIAN LAB
           </div>
-        </div>
-      </div>
-
-      <div className="audit-summary-strip">
-        <div className="audit-summary-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.08em', color: '#94a3b8' }}>
-              KEMAJUAN {currentLab?.name.toUpperCase() ?? 'LABORATORIUM'}
-            </span>
-            <span style={{ fontSize: '13px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#4edea3' }}>
-              {currentLab?.audited_count ?? 0} / {capacity} PC Terverifikasi ({number(currentLab?.progress_percent ?? 0, 1)}%)
-            </span>
+          <div style={{ position: 'relative' }}>
+            <select
+              value={selectedLabId}
+              onChange={(e) => {
+                selectedPcRef.current = 1
+                setSelectedLabId(Number(e.target.value))
+                setSelectedPc(1)
+              }}
+              style={{
+                width: '100%', background: '#0d0f12', border: '1px solid #374151',
+                borderRadius: '8px', padding: '8px 32px 8px 10px', fontSize: '12.5px',
+                fontWeight: 700, color: '#ffffff', appearance: 'none', cursor: 'pointer',
+              }}
+            >
+              {progressLabs.map((lab) => (
+                <option key={lab.id} value={lab.id}>
+                  {lab.name} ({lab.capacity} Unit PC)
+                </option>
+              ))}
+            </select>
+            <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', pointerEvents: 'none', fontSize: '12px' }}>▾</span>
           </div>
 
-          <div style={{ display: 'flex', gap: '16px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
-            <span style={{ color: '#10b981' }}>● {pcStats.off} Mati (0W)</span>
-            <span style={{ color: '#38bdf8' }}>● {pcStats.normalOrStandby} Aktif/Standby</span>
-            <span style={{ color: '#f87171' }}>● {pcStats.anomaly} Bermasalah</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '11px' }}>
+            <span style={{ color: '#94a3b8' }}>Hari Audit <strong style={{ color: '#ffffff' }}>#3</strong></span>
+            <span style={{ color: '#94a3b8' }}>{labLocation}</span>
           </div>
         </div>
 
-        <ProgressBar value={currentLab?.progress_percent ?? 0} tone="accent" height={6} />
-      </div>
-
-      <form className="audit-3col-grid" onSubmit={handleSaveNext}>
-        <section className="card" style={{ padding: '16px' }}>
-          <div className="card-head" style={{ marginBottom: '10px' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Monitor size={15} color="#38bdf8" />
-                <h2 className="card-title" style={{ fontSize: '13.5px' }}>Denah Grid {capacity} Unit PC</h2>
-              </div>
-              <p className="card-sub" style={{ fontSize: '10.5px' }}>Matriks Meja Auditor Lapangan</p>
+        {/* Workstation terpilih */}
+        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ background: '#14161a', border: '1px solid #26292e', borderRadius: '12px', padding: '14px' }}>
+            <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.08em', color: '#64748b', marginBottom: '8px' }}>
+              WORKSTATION TERPILIH
             </div>
-            <span className="badge badge-neutral" style={{ fontSize: '10px' }}>Lab-0{selectedLabId}</span>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <div style={{
+                fontSize: '36px', fontWeight: 900, fontFamily: 'var(--font-mono)',
+                color: isFaulty ? '#f87171' : '#38bdf8',
+                lineHeight: 1,
+              }}>
+                {pcCode}
+              </div>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                background: isFaulty ? '#450a0a' : '#042f2e',
+                border: `1px solid ${isFaulty ? '#ef4444' : '#0d9488'}`,
+                borderRadius: '20px', padding: '4px 10px',
+                fontSize: '10px', fontWeight: 700,
+                color: isFaulty ? '#fca5a5' : '#2dd4bf',
+                letterSpacing: '0.05em',
+              }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isFaulty ? '#ef4444' : '#14b8a6', display: 'inline-block' }} />
+                {isFaulty ? 'RUSAK' : 'SIAP DIAUDIT'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+              <button
+                type="button"
+                onClick={() => applyPcState(Math.max(selectedPc - 1, 1))}
+                style={{ flex: 1, background: '#1e2129', border: '1px solid #374151', borderRadius: '6px', padding: '5px', fontSize: '11px', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                ← {pcCodeFromNumber(Math.max(selectedPc - 1, 1))}
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPcState(Math.min(selectedPc + 1, capacity))}
+                style={{ flex: 1, background: '#1e2129', border: '1px solid #374151', borderRadius: '6px', padding: '5px', fontSize: '11px', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                {pcCodeFromNumber(Math.min(selectedPc + 1, capacity))} →
+              </button>
+            </div>
+
+            <div style={{ height: '1px', background: '#26292e', margin: '10px 0' }} />
+
+            {/* RAM Dropdown */}
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', marginBottom: '5px' }}>
+                Kapasitas RAM (GB) <span style={{ color: isFaulty ? '#64748b' : '#f97316' }}>{isFaulty ? '(opsional)' : '*'}</span>
+              </label>
+              <select
+                value={ramGb ?? ''}
+                onChange={(e) => setRamGb(e.target.value ? Number(e.target.value) : null)}
+                required={!isFaulty}
+                style={{
+                  width: '100%', background: '#0d0f12',
+                  border: `1px solid ${!isFaulty && !ramGb ? '#f97316' : '#374151'}`,
+                  borderRadius: '8px', padding: '8px 10px', fontSize: '12.5px',
+                  color: '#ffffff', appearance: 'none',
+                }}
+              >
+                <option value="">— Pilih RAM —</option>
+                {uniqueRamValues.map((v) => (
+                  <option key={v} value={v}>{v} GB</option>
+                ))}
+              </select>
+            </div>
+
+            {/* SSD Dropdown */}
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', marginBottom: '5px' }}>
+                Kapasitas SSD (GB) <span style={{ color: isFaulty ? '#64748b' : '#f97316' }}>{isFaulty ? '(opsional)' : '*'}</span>
+              </label>
+              <select
+                value={storageGb ?? ''}
+                onChange={(e) => setStorageGb(e.target.value ? Number(e.target.value) : null)}
+                required={!isFaulty}
+                style={{
+                  width: '100%', background: '#0d0f12',
+                  border: `1px solid ${!isFaulty && !storageGb ? '#f97316' : '#374151'}`,
+                  borderRadius: '8px', padding: '8px 10px', fontSize: '12.5px',
+                  color: '#ffffff', appearance: 'none',
+                }}
+              >
+                <option value="">— Pilih SSD —</option>
+                {uniqueStorageValues.map((v) => (
+                  <option key={v} value={v}>{v} GB</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Toggle: Unit Rusak */}
+            <div style={{
+              background: isFaulty ? '#450a0a' : '#1a1f2e',
+              border: `1px solid ${isFaulty ? '#ef4444' : '#374151'}`,
+              borderRadius: '10px', padding: '10px 12px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ fontSize: '11.5px', fontWeight: 700, color: isFaulty ? '#fca5a5' : '#e2e8f0' }}>
+                  Unit Mengalami Gangguan/Rusak
+                </span>
+                {/* Toggle switch */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !isFaulty
+                    setIsFaulty(next)
+                    if (next) setCondition('ANOMALY')
+                    else setCondition('NORMAL')
+                  }}
+                  style={{
+                    width: '44px', height: '24px', borderRadius: '12px',
+                    background: isFaulty ? '#ef4444' : '#374151',
+                    border: 'none', cursor: 'pointer', position: 'relative', flexShrink: 0,
+                    transition: 'background 0.2s',
+                  }}
+                  aria-pressed={isFaulty}
+                  aria-label="Toggle unit rusak"
+                >
+                  <span style={{
+                    position: 'absolute', top: '3px',
+                    left: isFaulty ? '23px' : '3px',
+                    width: '18px', height: '18px',
+                    borderRadius: '50%', background: '#ffffff',
+                    transition: 'left 0.2s',
+                  }} />
+                </button>
+              </div>
+              <p style={{ fontSize: '10px', color: '#64748b', margin: 0 }}>
+                Jika diaktifkan, unit ditandai Rusak dan dropdown RAM/SSD menjadi opsional.
+              </p>
+            </div>
+
+            {/* Anomaly sub-form when faulty */}
+            {isFaulty && (
+              <div style={{ marginTop: '10px', background: '#1a0a0a', border: '1px solid #7f1d1d', borderRadius: '10px', padding: '10px 12px' }}>
+                <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#fca5a5', marginBottom: '8px' }}>
+                  Detail Kerusakan
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+                  {[
+                    { key: 'kabel', label: 'Kabel Power Terkelupas', checked: checkKabel, setter: setCheckKabel },
+                    { key: 'stopkontak', label: 'Stopkontak Longgar/Sparking', checked: checkStopkontak, setter: setCheckStopkontak },
+                    { key: 'psu', label: 'PSU Suhu Tinggi (>45°C)', checked: checkPsu, setter: setCheckPsu },
+                    { key: 'shutdown', label: 'Gagal Shutdown Otomatis', checked: checkShutdown, setter: setCheckShutdown },
+                  ].map(({ key, label, checked, setter }) => (
+                    <label key={key} style={{
+                      display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '10.5px',
+                      color: checked ? '#fca5a5' : '#94a3b8', cursor: 'pointer',
+                    }}>
+                      <input
+                        type="checkbox" checked={checked}
+                        onChange={(e) => setter(e.target.checked)}
+                        style={{ accentColor: '#ef4444', marginTop: '1px' }}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <textarea
+                  value={auditNote}
+                  onChange={(e) => setAuditNote(e.target.value)}
+                  placeholder="Catatan rinci kondisi kerusakan..."
+                  rows={2}
+                  style={{
+                    width: '100%', background: '#0d0f12', border: '1px solid #7f1d1d',
+                    borderRadius: '6px', padding: '7px 9px', fontSize: '11px',
+                    color: '#ffffff', resize: 'none', boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            )}
           </div>
 
-          <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
-            <button
-              type="button"
-              className={`btn btn-xs ${gridFilter === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ fontSize: '10px', height: '26px' }}
-              onClick={() => setGridFilter('ALL')}
-            >
-              Semua ({capacity})
-            </button>
-            <button
-              type="button"
-              className={`btn btn-xs ${gridFilter === 'UNVERIFIED' ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ fontSize: '10px', height: '26px' }}
-              onClick={() => setGridFilter('UNVERIFIED')}
-            >
-              Belum ({pcStats.unverified})
-            </button>
-            <button
-              type="button"
-              className={`btn btn-xs ${gridFilter === 'PROBLEM' ? 'btn-danger' : 'btn-secondary'}`}
-              style={{ fontSize: '10px', height: '26px' }}
-              onClick={() => setGridFilter('PROBLEM')}
-            >
-              Masalah ({pcStats.anomaly})
-            </button>
-          </div>
-
-          <div
+          {/* Save button */}
+          <button
+            type="submit"
+            disabled={saving}
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '9px',
-              fontFamily: 'var(--font-mono)',
-              fontWeight: 700,
-              color: '#64748b',
-              marginBottom: '4px',
+              width: '100%', background: saving ? '#14532d' : 'linear-gradient(135deg, #15803d, #16a34a)',
+              border: 'none', borderRadius: '12px', padding: '14px 16px',
+              cursor: saving ? 'not-allowed' : 'pointer', color: '#ffffff',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
             }}
           >
-            <span>SEKTOR MEJA A-E (DEPAN KE BELAKANG)</span>
-            <span>KANAL 1-8</span>
+            <span style={{ fontSize: '13.5px', fontWeight: 800, letterSpacing: '0.03em' }}>
+              {saving ? '⏳ Menyimpan...' : '⬚ Simpan & Lanjut PC Berikutnya →'}
+            </span>
+            <span style={{ fontSize: '10px', color: '#86efac', fontWeight: 400 }}>
+              Tersimpan instan (&lt;1.5s) → otomatis beralih ke unit berikutnya
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void handleReportOutlet()}
+            disabled={reportingOutlet}
+            style={{
+              background: '#1a0a0a', border: '1px solid #7f1d1d', borderRadius: '8px',
+              padding: '8px', fontSize: '11px', color: '#fca5a5', cursor: 'pointer',
+            }}
+          >
+            {reportingOutlet ? 'Mengirim Tiket...' : '⚡ Tandai Meja Perlu Penggantian Stopkontak'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const next = Math.min(selectedPc + 1, capacity)
+              applyPcState(next)
+              toast.push('info', `${pcCode} dilewati sementara.`)
+            }}
+            style={{ background: 'none', border: 'none', fontSize: '10.5px', color: '#475569', cursor: 'pointer', padding: '4px' }}
+          >
+            Lewati Sementara (Audit Nanti)
+          </button>
+        </form>
+      </div>
+
+      {/* ========== PANEL KANAN ========== */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '14px', minWidth: 0 }}>
+
+        {/* ---- Bagian Atas: Denah PC Grid ---- */}
+        <div style={{ background: '#14161a', border: '1px solid #26292e', borderRadius: '12px', padding: '16px' }}>
+
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '14px', fontWeight: 800, color: '#ffffff' }}>
+                ⊞ Denah Audit PC {labName} ({capacity} Workstations)
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', flexWrap: 'wrap' }}>
+              <span style={{ color: '#4ade80' }}>● Tersimpan ({savedCount})</span>
+              <span style={{ color: '#f87171' }}>● Rusak ({faultyCount})</span>
+              <span style={{ color: '#38bdf8' }}>● Aktif ({pcCode})</span>
+              <span style={{ color: '#6b7280' }}>Belum ({remainCount})</span>
+            </div>
           </div>
 
-          <div className="grid-40-container">
+          {/* Progress bar */}
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', marginBottom: '5px' }}>
+              <span style={{ color: '#94a3b8' }}>Target Lab: {capacity} Unit Workstation</span>
+              <span style={{ color: '#4ade80', fontWeight: 700 }}>{progressPercent}% Selesai ({doneCount}/{capacity})</span>
+            </div>
+            <ProgressBar value={progressPercent} tone="accent" height={6} />
+          </div>
+
+          {/* Stats row */}
+          <div style={{ display: 'flex', gap: '16px', fontSize: '10.5px', fontFamily: 'var(--font-mono)', marginBottom: '12px' }}>
+            <span style={{ color: '#4ade80' }}>● Tersimpan Valid {savedCount}</span>
+            <span style={{ color: '#f87171' }}>● Bermasalah/Rusak {faultyCount}</span>
+            <span style={{ color: '#6b7280' }}>● Sisa Diaudit {remainCount}</span>
+          </div>
+
+          {/* PC Grid 8 columns */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(8, 1fr)',
+            gap: '5px',
+          }}>
             {allPcs.map((pcNum) => {
-              const st = getPcStatus(pcNum)
-              const isSelected = pcNum === selectedPc
+              const isActive = pcNum === selectedPc
               const isMatch = filteredPcs.includes(pcNum)
+              const cellStyle = getCellStyle(pcNum, isActive)
+              const specText = getCellSpecText(pcNum)
               return (
                 <button
                   type="button"
                   key={pcNum}
-                  className={`pc-grid-cell ${st} ${isSelected ? 'selected' : ''}`}
                   onClick={() => applyPcState(pcNum)}
-                  style={{ opacity: isMatch ? 1 : 0.2 }}
-                  title={`${pcCodeFromNumber(pcNum)}: ${st.toUpperCase()}`}
-                  aria-label={`Pilih ${pcCodeFromNumber(pcNum)} (${st})`}
+                  style={{
+                    ...cellStyle,
+                    borderRadius: '7px',
+                    padding: '5px 3px',
+                    fontSize: '10px',
+                    fontFamily: 'var(--font-mono)',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '2px',
+                    opacity: isMatch ? 1 : 0.4,
+                    transition: 'opacity 0.15s',
+                    minHeight: '44px',
+                  }}
+                  title={`${pcCodeFromNumber(pcNum)}: ${getPcStatus(pcNum).toUpperCase()}`}
+                  aria-label={`Pilih ${pcCodeFromNumber(pcNum)}`}
                 >
-                  {String(pcNum).padStart(2, '0')}
+                  <span style={{ fontWeight: isActive ? 900 : 700, fontSize: isActive ? '11px' : '10px' }}>
+                    {String(pcNum).padStart(2, '0')}
+                  </span>
+                  {isActive ? (
+                    <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#7dd3fc', letterSpacing: '0.03em' }}>AKTIF</span>
+                  ) : (
+                    <span style={{ fontSize: '8px', color: 'inherit', opacity: 0.8 }}>{specText}</span>
+                  )}
                 </button>
               )
             })}
           </div>
 
-          <div className="grid-legend-row">
-            <span style={{ color: '#10b981' }}>● Mati Total (0W)</span>
-            <span style={{ color: '#38bdf8' }}>● Normal (&le;5W)</span>
-            <span style={{ color: '#fbbf24' }}>● Standby Boros (&gt;5W)</span>
-            <span style={{ color: '#f87171' }}>● Anomali / Masalah</span>
-          </div>
-        </section>
-
-        <section className="card" style={{ padding: '20px' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingBottom: '14px',
-              borderBottom: '1px solid #26292e',
-              marginBottom: '16px',
-              gap: '12px',
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '10px',
-                  backgroundColor: condition === 'ANOMALY' ? '#ef4444' : condition === 'NORMAL' ? '#0ea5e9' : '#10b981',
-                  color: '#ffffff',
-                  fontSize: '15px',
-                  fontWeight: 800,
-                  fontFamily: 'var(--font-mono)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
-                <span className="badge-dot" style={{ backgroundColor: '#ffffff' }} />
-                {pcCodeFromNumber(selectedPc)}
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <h2 style={{ fontSize: '15px', color: '#ffffff' }}>
-                    Meja Baris {deskRow}, Sektor {deskSector}
-                  </h2>
-                  {condition === 'ANOMALY' && (
-                    <span style={{ fontSize: '11px', color: '#f87171', fontWeight: 700 }}>
-                      Anomali Terdeteksi
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#64748b' }}>
-                  {selectedAudit ? `Terakhir diaudit ${relativeTime(selectedAudit.audited_at)}` : 'Belum terverifikasi di sesi ini'}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <button
-                type="button"
-                className="btn btn-xs btn-secondary"
-                onClick={() => applyPcState(Math.max(selectedPc - 1, 1))}
-              >
-                &lt; {pcCodeFromNumber(Math.max(selectedPc - 1, 1))}
-              </button>
-              <button
-                type="button"
-                className="btn btn-xs btn-secondary"
-                onClick={() => applyPcState(Math.min(selectedPc + 1, capacity))}
-              >
-                {pcCodeFromNumber(Math.min(selectedPc + 1, capacity))} &gt;
-              </button>
-            </div>
-          </div>
-
-          <div style={{ backgroundColor: '#14161a', border: '1px solid #26292e', borderRadius: '12px', padding: '14px 16px', marginBottom: '18px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', gap: '10px', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: '#e2e2e6' }}>
-                <Cpu size={14} color="#38bdf8" />
-                <span>Profil Spesifikasi Hardware Master</span>
-              </div>
-              <label htmlFor="auditSpecSelect" className="visually-hidden">Pilih Spesifikasi PC</label>
-              <select
-                id="auditSpecSelect"
-                name="master_pc_spec_id"
-                className="input input-sm"
-                style={{ width: 'auto', maxWidth: '280px', fontSize: '11px' }}
-                value={selectedSpecId}
-                onChange={(e) => setSelectedSpecId(Number(e.target.value))}
-              >
-                {specs.map((spec) => (
-                  <option key={spec.id} value={spec.id}>
-                    {spec.label} ({spec.standby_watt}W)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="spec-2x3-grid">
-              <div className="spec-cell-tile">
-                <div className="label">CPU</div>
-                <div className="val">{selectedSpec?.cpu ?? 'Standar Lab'}</div>
-              </div>
-              <div className="spec-cell-tile">
-                <div className="label">RAM</div>
-                <div className="val">{selectedSpec ? `${selectedSpec.ram_gb} GB` : '—'}</div>
-              </div>
-              <div className="spec-cell-tile">
-                <div className="label">PENYIMPANAN</div>
-                <div className="val">{selectedSpec ? `${selectedSpec.storage_gb} GB ${selectedSpec.storage_type}` : '—'}</div>
-              </div>
-              <div className="spec-cell-tile">
-                <div className="label">STANDBY MASTER</div>
-                <div className="val">{selectedSpec ? `${selectedSpec.standby_watt} W` : '—'}</div>
-              </div>
-              <div className="spec-cell-tile">
-                <div className="label">STANDBY TERCATAT</div>
-                <div className="val">
-                  {condition === 'OFF' ? '0.0 W' : condition === 'NORMAL' ? `${selectedSpec?.standby_watt ?? 0} W` : `${Math.max(selectedSpec?.standby_watt ?? 0, 14.2)} W`}
-                </div>
-              </div>
-              <div className="spec-cell-tile">
-                <div className="label">STATUS RECORD</div>
-                <div className="val">{selectedAudit ? 'Update Record' : 'Record Baru'}</div>
-              </div>
-            </div>
-          </div>
-
-          <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
-            <legend style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.08em', color: '#94a3b8', marginBottom: '8px' }}>
-              <span>PILIH VALIDASI STATUS FISIK &amp; KELISTRIKAN</span>
-              <span style={{ color: '#f97316' }}>WAJIB DIISI</span>
-            </legend>
-
-            <div className="audit-trio-row">
-              <label className={`audit-trio-card ${condition === 'OFF' ? 'active-green' : ''}`}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <Power size={18} color="#10b981" />
-                  <input
-                    type="radio"
-                    name="unitCondition"
-                    value="OFF"
-                    checked={condition === 'OFF'}
-                    onChange={() => setCondition('OFF')}
-                    style={{ accentColor: '#10b981' }}
-                  />
-                </div>
-                <div>
-                  <strong style={{ fontSize: '12.5px', color: '#ffffff', display: 'block' }}>Mati Total / Cabut</strong>
-                  <small style={{ fontSize: '10.5px', color: '#94a3b8' }}>Stopkontak 0 Watt</small>
-                </div>
-              </label>
-
-              <label className={`audit-trio-card ${condition === 'NORMAL' ? 'active-blue' : ''}`}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <Monitor size={18} color="#38bdf8" />
-                  <input
-                    type="radio"
-                    name="unitCondition"
-                    value="NORMAL"
-                    checked={condition === 'NORMAL'}
-                    onChange={() => setCondition('NORMAL')}
-                    style={{ accentColor: '#38bdf8' }}
-                  />
-                </div>
-                <div>
-                  <strong style={{ fontSize: '12.5px', color: '#ffffff', display: 'block' }}>Standby / Normal</strong>
-                  <small style={{ fontSize: '10.5px', color: '#94a3b8' }}>{selectedSpec ? `${selectedSpec.standby_watt} W master` : 'Operasional wajar'}</small>
-                </div>
-              </label>
-
-              <label className={`audit-trio-card ${condition === 'ANOMALY' ? 'active-red' : ''}`}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <AlertTriangle size={18} color="#ef4444" />
-                  <input
-                    type="radio"
-                    name="unitCondition"
-                    value="ANOMALY"
-                    checked={condition === 'ANOMALY'}
-                    onChange={() => setCondition('ANOMALY')}
-                    style={{ accentColor: '#ef4444' }}
-                  />
-                </div>
-                <div>
-                  <strong style={{ fontSize: '12.5px', color: '#fca5a5', display: 'block' }}>Unit Bermasalah / Anomali</strong>
-                  <small style={{ fontSize: '10.5px', color: '#94a3b8' }}>Konsleting, bocor arus</small>
-                </div>
-              </label>
-            </div>
-          </fieldset>
-
-          {condition === 'ANOMALY' && (
-            <div className="anomaly-form-box">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Wrench size={14} color="#f87171" />
-                  <strong style={{ fontSize: '12.5px', color: '#ffffff' }}>
-                    Formulir Kendala {pcCodeFromNumber(selectedPc)} &amp; Tiket Otomatis
-                  </strong>
-                </div>
-                <span className="badge badge-danger" style={{ fontSize: '9.5px' }}>P1 Kritis</span>
-              </div>
-
-              <div className="checklist-2x2">
-                <label className={`checklist-item ${checkKabel ? 'checked' : ''}`}>
-                  <input type="checkbox" checked={checkKabel} onChange={(e) => setCheckKabel(e.target.checked)} style={{ accentColor: '#ef4444' }} />
-                  <span>Kabel Power Terkelupas / Bahaya Sengatan</span>
-                </label>
-
-                <label className={`checklist-item ${checkStopkontak ? 'checked' : ''}`}>
-                  <input type="checkbox" checked={checkStopkontak} onChange={(e) => setCheckStopkontak(e.target.checked)} style={{ accentColor: '#ef4444' }} />
-                  <span>Stopkontak Meja Longgar / Sparking</span>
-                </label>
-
-                <label className={`checklist-item ${checkPsu ? 'checked' : ''}`}>
-                  <input type="checkbox" checked={checkPsu} onChange={(e) => setCheckPsu(e.target.checked)} style={{ accentColor: '#ef4444' }} />
-                  <span>PSU Suhu Tinggi (&gt;45°C)</span>
-                </label>
-
-                <label className={`checklist-item ${checkShutdown ? 'checked' : ''}`}>
-                  <input type="checkbox" checked={checkShutdown} onChange={(e) => setCheckShutdown(e.target.checked)} style={{ accentColor: '#ef4444' }} />
-                  <span>Komputer Gagal Shutdown Otomatis</span>
-                </label>
-              </div>
-
-              <div className="field" style={{ marginBottom: '4px' }}>
-                <label htmlFor="auditFaultNote" style={{ fontSize: '10.5px' }}>Catatan Rinci Auditor Lapangan:</label>
-                <textarea
-                  id="auditFaultNote"
-                  name="fault_note"
-                  className="input textarea"
-                  rows={2}
-                  value={auditNote}
-                  onChange={(e) => setAuditNote(e.target.value)}
-                  placeholder="Jelaskan kondisi kabel, stopkontak, atau PSU yang bermasalah..."
-                  style={{ fontSize: '11.5px', lineHeight: 1.45 }}
-                />
-              </div>
-            </div>
-          )}
-        </section>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div className="card" style={{ padding: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Zap size={14} color="#10b981" />
-                <h3 className="card-title" style={{ fontSize: '13px' }}>Beban Panel {currentLab?.name.split(' ').slice(0, 2).join(' ')}</h3>
-              </div>
-              <span className={`badge badge-${labPanelSocket?.status === 'WARNING' || labPanelSocket?.status === 'OVER' ? 'danger' : 'success'}`} style={{ fontSize: '9px' }}>
-                {labPanelSocket?.status_label ?? 'Normal'}
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px' }}>
-              <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>MCB 10A Meja Komputer</span>
-              <span className="mono" style={{ fontSize: '11px', color: '#10b981', fontWeight: 700 }}>
-                {number(labPanelSocket?.percent ?? 0, 1)}% Kapasitas
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
-              <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#ffffff' }}>
-                {number(labPanelSocket?.load_watt ?? 0, 0)} <span style={{ fontSize: '11px', color: '#64748b' }}>Watt</span>
-              </span>
-              <span style={{ fontSize: '10px', color: '#64748b' }}>Maks {number(labPanelSocket?.limit_watt ?? 2200, 0)}W</span>
-            </div>
-            <ProgressBar
-              value={labPanelSocket?.percent ?? 0}
-              tone={labPanelSocket?.status === 'WARNING' || labPanelSocket?.status === 'OVER' ? 'danger' : 'accent'}
-              height={5}
-            />
-          </div>
-
-          <div className="card" style={{ padding: '16px' }}>
-            <div className="eyebrow" style={{ fontSize: '9.5px', color: '#f97316' }}>
-              PEMBOROSAN STANDBY LAB
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '4px 0' }}>
-              <span style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#ffffff' }}>
-                {number(labStandbySummary.totalWatt, 0)} <span style={{ fontSize: '11px', color: '#64748b' }}>Watt</span>
-              </span>
-              <span className="mono" style={{ fontSize: '11px', color: '#f87171', fontWeight: 600 }}>
-                -{rupiah(labStandbySummary.monthlyCost)} / bln
-              </span>
-            </div>
-            <p style={{ fontSize: '10.5px', color: '#94a3b8', lineHeight: 1.4 }}>
-              Proyeksi dari {labStandbySummary.activeStandbyUnits} unit PC dengan konsumsi standby &gt; 0W di lab ini.
-            </p>
-          </div>
-
-          <div className="card" style={{ padding: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Clock size={13} color="#94a3b8" />
-                <h3 className="card-title" style={{ fontSize: '12.5px' }}>RIWAYAT {recentAudits.length} PC TERAKHIR</h3>
-              </div>
-              <span style={{ fontSize: '10px', color: '#64748b' }}>Database</span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {recentAudits.map((item) => (
-                <div className="recent-audit-item" key={item.id}>
-                  <span className="mono" style={{ fontWeight: 700, color: item.is_faulty ? '#f87171' : '#ffffff' }}>
-                    {item.pc_number}
-                  </span>
-                  <div style={{ fontSize: '10.5px', textAlign: 'right' }}>
-                    <div>
-                      {item.is_faulty
-                        ? `Anomali (${item.spec.standby_watt}W)`
-                        : item.spec.standby_watt === 0
-                          ? 'Mati Total (0W)'
-                          : `Standby (${item.spec.standby_watt}W)`}
-                    </div>
-                    <div style={{ color: '#64748b', fontSize: '9.5px' }}>
-                      {relativeTime(item.audited_at)} • {item.auditor?.name ?? 'Auditor'}
-                    </div>
-                  </div>
-                  {item.is_faulty ? (
-                    <AlertTriangle size={14} color="#ef4444" />
-                  ) : item.spec.standby_watt > 5 ? (
-                    <AlertTriangle size={14} color="#f59e0b" />
-                  ) : (
-                    <CheckCircle2 size={14} color="#10b981" />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-            <button
-              type="submit"
-              className="login-submit-btn"
-              disabled={saving}
-              style={{ height: '42px', fontSize: '12.5px' }}
-            >
-              <ArrowRight size={16} />
-              <span>
-                {saving
-                  ? 'Menyimpan...'
-                  : `Simpan ${pcCodeFromNumber(selectedPc)} & Lanjut ke ${pcCodeFromNumber(Math.min(selectedPc + 1, capacity))}`}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-sm btn-danger"
-              style={{ height: '36px', fontSize: '11.5px', fontWeight: 600 }}
-              onClick={() => void handleReportOutlet()}
-              disabled={reportingOutlet}
-            >
-              <AlertTriangle size={13} />
-              {reportingOutlet ? 'Mengirim Tiket...' : 'Tandai Meja Perlu Penggantian Stopkontak'}
-            </button>
-
-            <button
-              type="button"
-              style={{ fontSize: '11px', color: '#94a3b8', textAlign: 'center', background: 'none', padding: '4px' }}
-              onClick={() => {
-                const next = Math.min(selectedPc + 1, capacity)
-                applyPcState(next)
-                toast.push('info', `${pcCodeFromNumber(selectedPc)} dilewati sementara.`)
-              }}
-            >
-              Lewati Sementara (Audit Nanti)
-            </button>
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: '12px', fontSize: '9.5px', marginTop: '10px', flexWrap: 'wrap' }}>
+            <span style={{ color: '#4ade80' }}>■ Tersimpan Valid</span>
+            <span style={{ color: '#f87171' }}>■ Rusak</span>
+            <span style={{ color: '#38bdf8' }}>■ Aktif/Sedang Diaudit</span>
+            <span style={{ color: '#4b5563' }}>■ Belum Diaudit</span>
           </div>
         </div>
-      </form>
-    </>
+
+        {/* ---- Bagian Bawah: Log Entri Audit ---- */}
+        <div style={{ background: '#14161a', border: '1px solid #26292e', borderRadius: '12px', padding: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
+              ↻ Log Entri Audit Terkini ({labName})
+            </span>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              background: '#042f2e', border: '1px solid #0d9488',
+              borderRadius: '20px', padding: '3px 10px',
+              fontSize: '9.5px', fontWeight: 700, color: '#2dd4bf',
+            }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#14b8a6', display: 'inline-block' }} />
+              Sinkronisasi Lokal Aktif
+            </span>
+          </div>
+
+          {recentAudits.length === 0 ? (
+            <div style={{ fontSize: '11.5px', color: '#475569', textAlign: 'center', padding: '16px 0' }}>
+              Belum ada data audit untuk lab ini.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {recentAudits.map((item) => {
+                const isBad = item.is_faulty
+                const timeStr = formatTime(item.audited_at)
+                const statusLabel = isBad ? 'Bermasalah' : item.spec.standby_watt === 0 ? 'Mati Total' : 'Nominal'
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      background: isBad ? '#1a0a0a' : '#0d1117',
+                      border: `1px solid ${isBad ? '#7f1d1d' : '#1e2129'}`,
+                      borderRadius: '8px', padding: '8px 12px',
+                      gap: '10px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                      <span style={{ color: isBad ? '#ef4444' : '#22c55e', fontSize: '14px', flexShrink: 0 }}>●</span>
+                      <div style={{ minWidth: 0 }}>
+                        <span style={{
+                          fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '12px',
+                          color: isBad ? '#fca5a5' : '#ffffff',
+                        }}>
+                          {item.pc_number}
+                        </span>
+                        {' '}
+                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                          {isBad
+                            ? (item.fault_note ?? 'Bermasalah / No Display')
+                            : `RAM: ${item.spec.ram_gb} GB | SSD: ${item.spec.storage_gb} GB`}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0 }}>
+                      <span style={{
+                        fontSize: '10px', fontWeight: 700,
+                        color: isBad ? '#f87171' : '#4ade80',
+                      }}>
+                        {statusLabel}
+                      </span>
+                      <span style={{ fontSize: '9.5px', fontFamily: 'var(--font-mono)', color: '#475569' }}>
+                        {timeStr}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Panel & standby summary (collapsed info) */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {(() => {
+            const labPanel = panelOverview?.labs.find((l) => l.id === selectedLabId)
+            const socketPanel = labPanel?.panels.find((p) => p.group_type === 'SOCKET') ?? null
+            if (!socketPanel) return null
+            return (
+              <div style={{ flex: 1, minWidth: '200px', background: '#14161a', border: '1px solid #26292e', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ fontSize: '9.5px', color: '#64748b', fontWeight: 700, marginBottom: '4px' }}>BEBAN PANEL MCB 10A</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '5px' }}>
+                  <span style={{ fontSize: '17px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#ffffff' }}>
+                    {number(socketPanel.load_watt ?? 0, 0)} <span style={{ fontSize: '10px', color: '#64748b' }}>W</span>
+                  </span>
+                  <span style={{ fontSize: '10.5px', fontWeight: 700, color: socketPanel.status === 'NORMAL' ? '#4ade80' : '#f87171' }}>
+                    {number(socketPanel.percent ?? 0, 1)}%
+                  </span>
+                </div>
+                <ProgressBar
+                  value={socketPanel.percent ?? 0}
+                  tone={socketPanel.status === 'WARNING' || socketPanel.status === 'OVER' ? 'danger' : 'accent'}
+                  height={4}
+                />
+              </div>
+            )
+          })()}
+
+          <div style={{ flex: 1, minWidth: '200px', background: '#14161a', border: '1px solid #26292e', borderRadius: '10px', padding: '12px' }}>
+            <div style={{ fontSize: '9.5px', color: '#f97316', fontWeight: 700, marginBottom: '4px' }}>PEMBOROSAN STANDBY LAB</div>
+            <div style={{ fontSize: '17px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#ffffff', marginBottom: '2px' }}>
+              {number(labAudits.reduce((s, i) => s + i.spec.standby_watt, 0), 0)} <span style={{ fontSize: '10px', color: '#64748b' }}>W total</span>
+            </div>
+            <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+              Dari {labAudits.filter((i) => i.spec.standby_watt > 0).length} unit aktif standby
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   )
+
+  // Suppress unused warning - handleSaveNext is kept for compatibility
+  void handleSaveNext
+  void handleReportOutlet
 }

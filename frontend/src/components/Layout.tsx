@@ -1,46 +1,32 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import {
-  BarChart3,
-  Bell,
-  ClipboardList,
-  Gauge,
-  LayoutDashboard,
-  LogOut,
-  Monitor,
-  Settings,
-  Users,
-} from 'lucide-react'
+import { LogOut, Zap } from 'lucide-react'
 import { roleLabels, useAuth } from '../auth/AuthContext'
 import { initials } from '../lib/format'
 import type { Role } from '../types'
 
 interface NavItem {
   to: string
-  label: string
-  short: string
-  icon: typeof LayoutDashboard
-  code?: string
+  labelLine1: string
+  labelLine2: string
 }
 
 const roleNavs: Record<Role, NavItem[]> = {
   ADMIN: [
-    { to: '/dashboard', label: 'Dasbor Utama & 6 Lab', short: 'Dasbor', icon: LayoutDashboard, code: 'L-02' },
-    { to: '/audit', label: 'Form Audit Lapangan', short: 'Audit', icon: ClipboardList, code: 'L-03' },
-    { to: '/panels', label: 'Panel MCB & Insiden', short: 'Panel', icon: Gauge, code: 'L-04' },
-    { to: '/executive', label: 'Dashboard Eksekutif', short: 'Eksekutif', icon: BarChart3, code: 'L-05' },
-    { to: '/specs', label: 'Master Inventaris PC', short: 'Master', icon: Monitor, code: 'L-06' },
-    { to: '/users', label: 'Pengguna & RBAC', short: 'Pengguna', icon: Users },
-    { to: '/settings', label: 'Pengaturan Sistem', short: 'Setelan', icon: Settings },
+    { to: '/dashboard', labelLine1: 'Dasbor Energi', labelLine2: '6 Lab' },
+    { to: '/specs',     labelLine1: 'Master Data',   labelLine2: '& RBAC' },
+    { to: '/panels',   labelLine1: 'Live Panel',     labelLine2: 'MCB' },
+    { to: '/executive',labelLine1: 'Ringkasan',      labelLine2: 'Eksekutif' },
   ],
   AUDITOR: [
-    { to: '/audit', label: 'Form Audit Lapangan', short: 'Audit', icon: ClipboardList, code: 'L-03' },
+    { to: '/dashboard', labelLine1: 'Dasbor Energi', labelLine2: '6 Lab' },
+    { to: '/audit',     labelLine1: 'Form Audit',    labelLine2: 'Lapangan' },
   ],
   MAINTENANCE: [
-    { to: '/panels', label: 'Panel MCB & Insiden', short: 'Panel', icon: Gauge, code: 'L-04' },
+    { to: '/panels', labelLine1: 'Live Panel', labelLine2: 'MCB' },
   ],
   PIMPINAN: [
-    { to: '/executive', label: 'Dashboard Eksekutif', short: 'Eksekutif', icon: BarChart3, code: 'L-05' },
+    { to: '/executive', labelLine1: 'Ringkasan', labelLine2: 'Eksekutif' },
   ],
 }
 
@@ -58,70 +44,80 @@ export default function Layout() {
 
   return (
     <div className="app-shell">
-      {/* Top Institutional Header */}
+      {/* ── Main Navbar ── */}
       <header className="topbar">
-        <div className="topbar-left">
-          <span className="campus-pill">
-            <span className="dot" /> GREEN CAMPUS UNKLAB
-          </span>
-          <span className="topbar-pipe">|</span>
-          <span className="telemetry-status">Grid Telemetry Active (220.4V avg)</span>
-        </div>
 
-        {/* User & Role Status */}
-        <div className="topbar-right">
-          <button className="notif-bell" aria-label="Notifikasi Sistem" title="5 Insiden Aktif">
-            <Bell size={16} />
-            <span className="notif-dot" />
-          </button>
-
-          <div className="user-profile-widget">
-            <div className="user-profile-copy">
-              <div className="user-profile-name">{user.name}</div>
-              <div className="user-profile-dept">Fakultas Ilmu Komputer</div>
-            </div>
-            <div className="user-avatar-badge" title={roleLabels[user.role]}>
-              {initials(user.name)}
+        {/* LEFT — Logo / Brand */}
+        <div className="topbar-brand">
+          <div className="brand-icon-wrap">
+            <Zap size={20} />
+          </div>
+          <div className="brand-text-block">
+            <div className="brand-title">SISTEM AUDIT LISTRIK VAMPIR</div>
+            <div className="brand-row2">
+              <span className="campus-pill">
+                <span className="dot" />
+                GREEN CAMPUS UNKLAB
+              </span>
+              <span className="brand-subtitle">Fakultas Ilmu Komputer · Universitas Klabat</span>
             </div>
           </div>
+        </div>
 
+        {/* CENTER — Nav tabs */}
+        <nav className="topbar-nav" aria-label="Navigasi Utama">
+          {nav.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => `nav-tab ${isActive ? 'active' : ''}`}
+            >
+              <span className="nav-tab-l1">{item.labelLine1}</span>
+              <span className="nav-tab-l2">{item.labelLine2}</span>
+            </NavLink>
+          ))}
+        </nav>
+
+        {/* RIGHT — User info + logout */}
+        <div className="topbar-user">
+          <div className="user-avatar-badge" title={roleLabels[user.role]}>
+            {initials(user.name)}
+          </div>
+          <div className="user-copy">
+            <div className="user-name">{user.name}</div>
+            <div className="user-role">{roleLabels[user.role]}</div>
+          </div>
           <button
-            className="logout-mini-btn"
+            className="logout-btn"
             onClick={() => void logout()}
             aria-label="Keluar dari sistem"
             title="Keluar / Ganti Akun"
           >
-            <LogOut size={16} />
+            → Keluar
+            <LogOut size={13} />
           </button>
         </div>
       </header>
 
-      {/* Secondary Horizontal Subnav Navigation */}
-      <nav className="subnav" aria-label="Navigasi Telemetri Utama">
-        <div className="subnav-tabs">
-          {nav.map((item) => {
-            const Icon = item.icon
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) => `subnav-link ${isActive ? 'active' : ''}`}
-              >
-                <Icon size={15} />
-                <span>{item.label}</span>
-                {item.code && <span className="subnav-badge">{item.code}</span>}
-              </NavLink>
-            )
-          })}
-        </div>
-      </nav>
-
-      {/* Main Content Area */}
+      {/* Main Content */}
       <main className="main">
         <div className="page">
           <Outlet />
         </div>
       </main>
+
+      {/* Footer */}
+      <footer className="app-footer">
+        <span className="footer-copy">
+          © 2024 Fakultas Ilmu Komputer, Universitas Klabat. Inisiatif Green Campus &amp; Efisiensi Daya Vampir.
+        </span>
+        <span className="footer-status">
+          <span className="footer-dot" />
+          Telemetry Grid Online
+          <span className="footer-pipe">|</span>
+          Protokol IoT FIK-v2.4
+        </span>
+      </footer>
     </div>
   )
 }
