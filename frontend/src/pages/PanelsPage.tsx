@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  AlertTriangle,
   CheckCircle2,
   Clock,
   Download,
-  Gauge,
   Plus,
   Send,
   ShieldAlert,
@@ -18,8 +16,21 @@ import { useToast } from '../components/ToastProvider'
 import type { Incident, Paginated, PanelOverview, PanelStatus, Parameters } from '../types'
 
 function ticketCode(incident: Incident): string {
-  const year = new Date(incident.created_at).getFullYear() || 2026
-  return `#TKT-${year}-${String(incident.id).padStart(3, '0')}`
+  const year = new Date(incident.created_at).getFullYear() || 2024
+  return `#INC-${year}-${String(incident.id).padStart(3, '0')}`
+}
+
+function labStatusInfo(socket: PanelStatus | undefined, ac: PanelStatus | undefined) {
+  const socketOver = socket?.status === 'OVER'
+  const acOver = ac?.status === 'OVER'
+  const socketWarn = socket?.status === 'WARNING'
+  const acWarn = ac?.status === 'WARNING'
+  if (socketOver || acOver) {
+    const pct = Math.max(socket?.percent ?? 0, ac?.percent ?? 0)
+    return { label: `KRITIS MELEBIHI ${number(pct, 0)}%`, tone: 'danger' as const }
+  }
+  if (socketWarn || acWarn) return { label: 'WASPADA', tone: 'warning' as const }
+  return { label: 'NORMAL', tone: 'success' as const }
 }
 
 export default function PanelsPage() {
@@ -38,13 +49,21 @@ export default function PanelsPage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
 
-  const [readingOpen, setReadingOpen] = useState(false)
+  // Section B inline form state
   const [readingLabId, setReadingLabId] = useState('')
   const [readingGroup, setReadingGroup] = useState<'SOCKET' | 'AC'>('SOCKET')
   const [readingWatt, setReadingWatt] = useState('')
-  const [readingNotes, setReadingNotes] = useState('')
   const [savingReading, setSavingReading] = useState(false)
   const [readingError, setReadingError] = useState('')
+
+  // Modal reading (kept for card button)
+  const [readingOpen, setReadingOpen] = useState(false)
+  const [readingNotes, setReadingNotes] = useState('')
+  const [modalReadingLabId, setModalReadingLabId] = useState('')
+  const [modalReadingGroup, setModalReadingGroup] = useState<'SOCKET' | 'AC'>('SOCKET')
+  const [modalReadingWatt, setModalReadingWatt] = useState('')
+  const [modalSaving, setModalSaving] = useState(false)
+  const [modalReadingError, setModalReadingError] = useState('')
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading((prev) => prev)
@@ -58,6 +77,7 @@ export default function PanelsPage() {
       if (panelsRes.labs.length > 0) {
         setNewLab((prev) => prev || String(panelsRes.labs[0].id))
         setReadingLabId((prev) => prev || String(panelsRes.labs[0].id))
+        setModalReadingLabId((prev) => prev || String(panelsRes.labs[0].id))
       }
       setError('')
     } catch (caught) {
@@ -67,9 +87,7 @@ export default function PanelsPage() {
     }
   }, [])
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  useEffect(() => { void load() }, [load])
 
   useEffect(() => {
     const pollSeconds = Math.max(panelOverview?.parameters?.incident_poll_seconds ?? 5, 2)
@@ -92,7 +110,6 @@ export default function PanelsPage() {
     const baruCount = incidents.filter((i) => i.status === 'BARU').length
     const ditanganiCount = incidents.filter((i) => i.status === 'DITANGANI').length
     const selesaiCount = incidents.filter((i) => i.status === 'SELESAI').length
-
     return {
       totalKw: totalWatt / 1000,
       totalAmpere: totalWatt / 220,
@@ -108,10 +125,7 @@ export default function PanelsPage() {
     setBusyId(incident.id)
     try {
       if (incident.status === 'BARU' && target === 'SELESAI') {
-        await api.patch(`/incidents/${incident.id}/status`, {
-          status: 'DITANGANI',
-          note: 'Ditangani oleh tim Facility Maintenance.',
-        })
+        await api.patch(`/incidents/${incident.id}/status`, { status: 'DITANGANI', note: 'Ditangani oleh tim Facility Maintenance.' })
       }
       await api.patch(`/incidents/${incident.id}/status`, {
         status: target,
@@ -132,10 +146,7 @@ export default function PanelsPage() {
     setCreating(true)
     setCreateError('')
     try {
-      await api.post('/incidents', {
-        lab_room_id: Number(newLab),
-        description: newDesc.trim(),
-      })
+      await api.post('/incidents', { lab_room_id: Number(newLab), description: newDesc.trim() })
       setCreateOpen(false)
       setNewDesc('')
       await load(true)
@@ -148,16 +159,39 @@ export default function PanelsPage() {
   }
 
   function openReadingModal(labId: number, group: 'SOCKET' | 'AC', currentWatt: number | null) {
-    setReadingLabId(String(labId))
-    setReadingGroup(group)
-    setReadingWatt(currentWatt !== null ? String(currentWatt) : '')
+    setModalReadingLabId(String(labId))
+    setModalReadingGroup(group)
+    setModalReadingWatt(currentWatt !== null ? String(currentWatt) : '')
     setReadingNotes('')
-    setReadingError('')
+    setModalReadingError('')
     setReadingOpen(true)
+  }
+
+  async function handleSubmitModalReading(e: FormEvent) {
+    e.preventDefault()
+    setModalSaving(true)
+    setModalReadingError('')
+    try {
+      await api.post('/panel-readings', {
+        lab_room_id: Number(modalReadingLabId),
+        group_type: modalReadingGroup,
+        load_watt: Number(modalReadingWatt),
+        source: 'MANUAL_MEASUREMENT',
+        notes: readingNotes.trim() || null,
+      })
+      setReadingOpen(false)
+      await load(true)
+      toast.success('Pembacaan beban MCB berhasil disimpan!')
+    } catch (caught) {
+      setModalReadingError(firstError(caught))
+    } finally {
+      setModalSaving(false)
+    }
   }
 
   async function handleSubmitReading(e: FormEvent) {
     e.preventDefault()
+    if (!readingWatt) return
     setSavingReading(true)
     setReadingError('')
     try {
@@ -166,9 +200,9 @@ export default function PanelsPage() {
         group_type: readingGroup,
         load_watt: Number(readingWatt),
         source: 'MANUAL_MEASUREMENT',
-        notes: readingNotes.trim() || null,
+        notes: null,
       })
-      setReadingOpen(false)
+      setReadingWatt('')
       await load(true)
       toast.success('Pembacaan beban MCB berhasil disimpan!')
     } catch (caught) {
@@ -201,201 +235,189 @@ export default function PanelsPage() {
   if (loading && !panelOverview) return <PageLoader label="Memuat panel MCB & tiket insiden..." />
   if (error && !panelOverview) return <ErrorState message={error} onRetry={() => void load()} />
 
-  const filteredTickets = incidents.filter((item) => {
-    if (filter === 'ALL') return true
-    return item.status === filter
-  })
+  const filteredTickets = incidents.filter((item) => filter === 'ALL' || item.status === filter)
+  const newestIncident = incidents.find((i) => i.status === 'BARU')
+
+  // Determine selected lab's limits for Section B dropdown hint
+  const selectedLab = panelOverview?.labs.find((l) => String(l.id) === readingLabId)
+  const selectedPanel = selectedLab?.panels.find((p) => p.group_type === readingGroup)
 
   return (
     <>
-      {!silenced && stats.highestWarning && (
-        <div className="emergency-banner">
-          <div className="emergency-info">
-            <div className="emergency-icon">
-              <ShieldAlert size={20} />
-            </div>
+      {/* ── Page-level context header ─────────────────────────────────── */}
+      <div className="panels-context-header">
+        <div className="panels-context-left">
+          <div className="panels-user-info">
+            <span className="panels-username">Budi Santoso</span>
+            <span className="badge badge-warning" style={{ fontSize: '10px', letterSpacing: '0.05em' }}>FACILITY MAINTENANCE</span>
+            <span className="panels-shift">FIK Shift Pagi</span>
+          </div>
+          <div className="panels-session-info">
+            <span className="dot-green">●</span> Sesi Lapangan Aktif
+            <span className="sep">•</span> Lokasi Gedung FIK Lantai 2
+            <span className="sep">•</span> Panel Distribusi Utama
+          </div>
+        </div>
+        <div className="panels-context-right">
+          {stats.baruCount > 0 && (
+            <button type="button" className="btn btn-danger btn-sm" style={{ gap: '6px' }}>
+              <span>●</span> {stats.baruCount} Insiden Baru
+            </button>
+          )}
+          <button type="button" className="btn btn-secondary btn-sm">Keluar</button>
+        </div>
+      </div>
+
+      {/* ── Incident banner ───────────────────────────────────────────── */}
+      {!silenced && newestIncident && (
+        <div className="incident-banner">
+          <div className="incident-banner-left">
+            <ShieldAlert size={18} />
             <div>
-              <div className="emergency-title">EMERGENCY ALERT</div>
-              <div className="emergency-text">PERINGATAN BEBAN PANEL TINGGI ({stats.highestWarning.status_label.toUpperCase()})</div>
-              <div className="emergency-sub">
-                {stats.highestWarning.lab_name} — {stats.highestWarning.group_label} mencapai{' '}
-                {number(stats.highestWarning.percent ?? 0, 1)}% kapasitas ({number(stats.highestWarning.load_watt ?? 0, 0)} W /{' '}
-                {number(stats.highestWarning.limit_watt, 0)} W). {stats.highestWarning.notes ?? 'Segera periksa distribusi beban meja.'}
-              </div>
+              <span className="incident-banner-label">⚠ Laporan Insiden Baru: {newestIncident.description}</span>
+              <span className="incident-banner-time">DITERIMA {relativeTime(newestIncident.created_at).toUpperCase()}</span>
             </div>
           </div>
-          <div className="emergency-actions">
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSilenced(true)}>
-              <VolumeX size={14} /> Bungkam Banner
-            </button>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <button
               type="button"
-              className="btn btn-danger btn-sm"
-              style={{ backgroundColor: '#ffffff', color: '#b91c1c', fontWeight: 700 }}
-              onClick={() => openReadingModal(stats.highestWarning!.lab_room_id, stats.highestWarning!.group_type, stats.highestWarning!.load_watt)}
+              className="btn btn-xs"
+              style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)' }}
+              onClick={() => {
+                const el = document.getElementById('section-c')
+                el?.scrollIntoView({ behavior: 'smooth' })
+              }}
             >
-              <Zap size={14} /> Perbarui Pembacaan MCB
+              Tinjau {newestIncident.lab_name ?? `Lab ${newestIncident.lab_room_id}`} ↓
+            </button>
+            <button type="button" className="btn btn-xs" style={{ background: 'transparent', color: 'rgba(255,255,255,0.6)', border: 'none' }} onClick={() => setSilenced(true)}>
+              <VolumeX size={13} />
             </button>
           </div>
         </div>
       )}
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon stat-icon-blue">
-            <Zap size={20} />
-          </div>
-          <div className="stat-copy">
-            <div className="stat-label">GRID STANDARD VOLTAGE</div>
-            <div className="stat-value">220.0 <span style={{ fontSize: '13px', color: '#64748b' }}>V RMS</span></div>
-            <div className="stat-meta" style={{ color: '#10b981' }}>● Referensi Fasa Tunggal</div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon stat-icon-blue">
-            <Gauge size={20} />
-          </div>
-          <div className="stat-copy">
-            <div className="stat-label">TOTAL LOAD {panelOverview?.summary.labs ?? 6} LABORATORIUM</div>
-            <div className="stat-value">{number(stats.totalKw, 1)} <span style={{ fontSize: '13px', color: '#64748b' }}>kW</span></div>
-            <div className="stat-meta">Estimasi Ampere: {number(stats.totalAmpere, 1)} A</div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon stat-icon-red">
-            <AlertTriangle size={20} />
-          </div>
-          <div className="stat-copy">
-            <div className="stat-label">MCB OVERLOAD WARNING</div>
-            <div className="stat-value" style={{ color: '#f87171' }}>
-              {panelOverview?.summary.warnings ?? 0}{' '}
-              <span style={{ fontSize: '13px', color: '#64748b' }}>/ {panelOverview?.summary.panel_groups ?? 12} Breakers</span>
-            </div>
-            <div className="stat-meta">
-              {stats.highestWarning ? `! ${stats.highestWarning.lab_name}` : 'Semua grup dalam batas aman'}
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon stat-icon-amber">
-            <Clock size={20} />
-          </div>
-          <div className="stat-copy">
-            <div className="stat-label">TIKET INSIDEN AKTIF</div>
-            <div className="stat-value">{stats.activeCount} <span style={{ fontSize: '13px', color: '#64748b' }}>Tiket</span></div>
-            <div className="stat-meta" style={{ color: '#f59e0b' }}>{stats.baruCount} Baru · {stats.ditanganiCount} Ditangani</div>
-          </div>
-        </div>
-      </div>
-
+      {/* ═══════════════════════════════════════════════════════════════
+          BAGIAN A — Monitoring Panel MCB 10A / 40A
+      ═══════════════════════════════════════════════════════════════ */}
       <section className="card" style={{ marginBottom: '22px' }}>
         <div className="card-head">
           <div>
-            <div className="eyebrow" style={{ color: '#94a3b8' }}>
-              PANEL MONITORING MCB &amp; SUB-DISTRIBUSI KAMPUS
-            </div>
-            <h2 className="card-title">Monitoring 2 Jalur Utama per Lab: MCB 10A (Stopkontak/PC) &amp; MCB 40A (AC Split)</h2>
+            <div className="eyebrow" style={{ color: '#94a3b8' }}>PANEL MONITORING MCB &amp; SUB-DISTRIBUSI KAMPUS</div>
+            <h2 className="card-title">Bagian A: Monitoring Panel MCB 10A / 40A</h2>
           </div>
-          <div style={{ display: 'flex', gap: '14px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: '14px', fontSize: '11px', fontFamily: 'var(--font-mono)', flexWrap: 'wrap' }}>
             <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span className="badge-dot" style={{ backgroundColor: '#10b981' }} /> Normal (&lt;80%)
+              <span className="badge-dot" style={{ backgroundColor: '#10b981' }} /> Hijau Normal (&lt;75%)
             </span>
-            <span style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span className="badge-dot" style={{ backgroundColor: '#f59e0b' }} /> Waspada (80-100%)
+            <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span className="badge-dot" style={{ backgroundColor: '#f59e0b' }} /> Oranye Waspada (75–90%)
             </span>
-            <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span className="badge-dot" style={{ backgroundColor: '#ef4444' }} /> Over (&gt;100%)
+            <span style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span className="badge-dot" style={{ backgroundColor: '#ef4444' }} /> Merah Kritis (&gt;90%)
             </span>
           </div>
         </div>
 
-        <div className="labs-grid">
+        <div className="mcb-panel-grid">
           {(panelOverview?.labs ?? []).map((lab) => {
             const socket = lab.panels.find((p) => p.group_type === 'SOCKET')
             const ac = lab.panels.find((p) => p.group_type === 'AC')
-            const critical = socket?.status === 'WARNING' || socket?.status === 'OVER' || ac?.status === 'WARNING' || ac?.status === 'OVER'
-            const statusTone = socket?.status === 'OVER' || ac?.status === 'OVER' ? 'danger' : critical ? 'warning' : 'success'
-            const socketAmp = socket?.load_watt ? socket.load_watt / socket.voltage : 0
-            const acAmp = ac?.load_watt ? ac.load_watt / ac.voltage : 0
+            const { label: statusLabel, tone: statusTone } = labStatusInfo(socket, ac)
+            const isCritical = statusTone === 'danger'
+            const isWarning = statusTone === 'warning'
+            const socketPct = socket?.percent ?? 0
+            const acPct = ac?.percent ?? 0
+
+            // Find first open incident for this lab
+            const labIncident = incidents.find(
+              (i) => i.lab_room_id === lab.id && (i.status === 'BARU' || i.status === 'DITANGANI')
+            )
 
             return (
               <div
                 key={lab.id}
-                className={`lab-card ${critical ? 'critical' : ''}`}
-                style={{ backgroundColor: '#14161a' }}
+                className={`mcb-card-box${isCritical ? ' mcb-card-critical' : isWarning ? ' mcb-card-warning' : ''}`}
               >
-                <div className="lab-card-head">
+                {/* Card header */}
+                <div className="mcb-card-head">
                   <div>
-                    <div className="lab-code">{lab.location ?? `GK1-30${lab.id}`}</div>
-                    <div className="lab-name" style={{ fontSize: '13.5px' }}>{lab.name}</div>
+                    <div className="lab-name" style={{ fontWeight: 700, fontSize: '14px' }}>{lab.name}</div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                      {lab.location ?? `Lantai 2 • ${lab.name}`}
+                    </div>
                   </div>
-                  <span className={`badge badge-${statusTone}`}>
-                    <span className="badge-dot" /> {socket?.status === 'OVER' ? 'OVERLOAD' : critical ? 'Waspada' : 'Aman'}
+                  <span className={`badge badge-${statusTone}`} style={{ fontSize: '10px', whiteSpace: 'nowrap' }}>
+                    <span className="badge-dot" /> {statusLabel}
                   </span>
                 </div>
 
+                {/* Critical overlay badge */}
+                {isCritical && (
+                  <div className="mcb-critical-alert">
+                    ⚡ BAHAYA OVERHEAT TRIP
+                  </div>
+                )}
+
+                {/* MCB Stopkontak 10A */}
                 {socket && (
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
-                      <span style={{ color: critical ? '#f87171' : '#94a3b8', fontWeight: critical ? 700 : 500 }}>
-                        {socket.group_label} ({number(socket.limit_watt, 0)}W)
-                      </span>
-                      <span className="mono" style={{ color: critical ? '#f87171' : '#ffffff', fontWeight: 600 }}>
-                        {number(socket.percent ?? 0, 1)}%
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: critical ? '#f87171' : '#ffffff' }}>
-                        {number(socket.load_watt ?? 0, 0)} W
-                      </span>
-                      <span className="mono" style={{ fontSize: '10.5px', color: '#64748b' }}>
-                        {number(socketAmp, 2)}A / {number(socket.limit_ampere, 1)}A
+                  <div className="mcb-breaker-row">
+                    <div className="mcb-breaker-label-row">
+                      <span className="mcb-breaker-label">MCB Stopkontak 10A</span>
+                      <span className="mcb-breaker-watt">{number(socket.load_watt ?? 0, 0)} W</span>
+                      <span className={`mcb-breaker-pct ${socketPct > 90 ? 'pct-danger' : socketPct > 75 ? 'pct-warn' : 'pct-ok'}`}>
+                        {number(socketPct, 1)}%
                       </span>
                     </div>
-                    <ProgressBar value={socket.percent ?? 0} tone={statusTone} height={5} />
+                    <ProgressBar
+                      value={socketPct}
+                      tone={socketPct > 90 ? 'danger' : socketPct > 75 ? 'warning' : 'success'}
+                      height={6}
+                    />
                   </div>
                 )}
 
+                {/* MCB Grup AC 40A */}
                 {ac && (
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
-                      <span style={{ color: '#94a3b8' }}>{ac.group_label} ({number(ac.limit_watt, 0)}W)</span>
-                      <span className="mono" style={{ color: '#ffffff', fontWeight: 600 }}>{number(ac.percent ?? 0, 1)}%</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
-                        {number(ac.load_watt ?? 0, 0)} W
-                      </span>
-                      <span className="mono" style={{ fontSize: '10.5px', color: '#64748b' }}>
-                        {number(acAmp, 2)}A / {number(ac.limit_ampere, 1)}A
+                  <div className="mcb-breaker-row">
+                    <div className="mcb-breaker-label-row">
+                      <span className="mcb-breaker-label">MCB Grup AC 40A</span>
+                      <span className="mcb-breaker-watt">{number(ac.load_watt ?? 0, 0)} W</span>
+                      <span className={`mcb-breaker-pct ${acPct > 90 ? 'pct-danger' : acPct > 75 ? 'pct-warn' : 'pct-ok'}`}>
+                        {number(acPct, 1)}%
                       </span>
                     </div>
-                    <ProgressBar value={ac.percent ?? 0} tone="accent" height={5} />
+                    <ProgressBar
+                      value={acPct}
+                      tone={acPct > 90 ? 'danger' : acPct > 75 ? 'warning' : 'accent'}
+                      height={6}
+                    />
                   </div>
                 )}
 
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    borderTop: '1px solid #1e2126',
-                    paddingTop: '8px',
-                    fontSize: '11px',
-                  }}
-                >
-                  <span style={{ color: '#94a3b8' }}>
-                    {socket?.recorded_at ? `Update ${relativeTime(socket.recorded_at)}` : 'Belum ada catatan'}
-                  </span>
+                {/* Card footer */}
+                <div className="mcb-card-footer">
+                  <div className="mcb-footer-left">
+                    <span style={{ color: '#94a3b8', fontSize: '11px' }}>
+                      Panel Box {lab.location ?? 'GK2-Lt2'}
+                    </span>
+                    {labIncident ? (
+                      <span style={{ color: '#f87171', fontSize: '10.5px', fontWeight: 600, marginTop: '2px' }}>
+                        {ticketCode(labIncident)} [UTAMA]
+                      </span>
+                    ) : (
+                      <span style={{ color: '#10b981', fontSize: '10.5px' }}>
+                        Status Sirkuit: {statusLabel === 'NORMAL' ? 'Aman' : statusLabel}
+                      </span>
+                    )}
+                  </div>
                   <button
                     type="button"
-                    className={`btn btn-xs ${critical ? 'btn-danger' : 'btn-secondary'}`}
+                    className={`btn btn-xs ${isCritical ? 'btn-danger' : 'btn-secondary'}`}
                     onClick={() => openReadingModal(lab.id, 'SOCKET', socket?.load_watt ?? null)}
                   >
-                    Catat Beban
+                    Catat
                   </button>
                 </div>
               </div>
@@ -404,16 +426,114 @@ export default function PanelsPage() {
         </div>
       </section>
 
-      <section className="card">
+      {/* ═══════════════════════════════════════════════════════════════
+          BAGIAN B — Input Pembacaan Beban
+      ═══════════════════════════════════════════════════════════════ */}
+      <section className="card" style={{ marginBottom: '22px' }}>
         <div className="card-head">
           <div>
-            <div className="eyebrow" style={{ color: '#94a3b8' }}>
-              DAFTAR TIKET GANGGUAN LISTRIK &amp; ANOMALI PC
+            <div className="eyebrow" style={{ color: '#94a3b8' }}>FIELD INPUT FORM — FACILITY MAINTENANCE</div>
+            <h2 className="card-title">Bagian B: Input Pembacaan Beban</h2>
+            <p style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px', marginBottom: 0 }}>
+              Masukkan pembacaan beban MCB secara manual dari clamp meter / tang ampere di lapangan.
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'start' }}>
+          {/* Form */}
+          <form onSubmit={handleSubmitReading} className="form-stack" style={{ gap: '14px' }}>
+            <div className="field">
+              <label htmlFor="secBLab" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8' }}>
+                Pilih Ruang Lab
+              </label>
+              <select
+                id="secBLab"
+                className="input"
+                value={readingLabId}
+                onChange={(e) => setReadingLabId(e.target.value)}
+                required
+              >
+                {(panelOverview?.labs ?? []).map((lab) => (
+                  <option key={lab.id} value={lab.id}>{lab.name}</option>
+                ))}
+              </select>
             </div>
-            <h2 className="card-title">Antrean perbaikan aktif tim Facility Maintenance UNKLAB.</h2>
+
+            <div className="field">
+              <label htmlFor="secBGroup" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8' }}>
+                Pilih Grup MCB
+                {selectedPanel && (
+                  <span style={{ color: '#f59e0b', marginLeft: '8px', fontWeight: 600 }}>
+                    (Batas: {number(selectedPanel.limit_watt, 0)} W)
+                  </span>
+                )}
+              </label>
+              <select
+                id="secBGroup"
+                className="input"
+                value={readingGroup}
+                onChange={(e) => setReadingGroup(e.target.value as 'SOCKET' | 'AC')}
+              >
+                <option value="SOCKET">Grup Stopkontak — MCB 10A</option>
+                <option value="AC">Grup AC Ruangan — MCB 40A</option>
+              </select>
+            </div>
+
+            <div className="field">
+              <label htmlFor="secBWatt" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8' }}>
+                Nilai Beban Terbaca (Watt)
+              </label>
+              <input
+                id="secBWatt"
+                className="input"
+                type="number"
+                min="0"
+                max="100000"
+                step="1"
+                placeholder="Contoh: 1850"
+                value={readingWatt}
+                onChange={(e) => setReadingWatt(e.target.value)}
+                required
+              />
+            </div>
+
+            {readingError && <div className="inline-error" role="alert" aria-live="polite">{readingError}</div>}
+
+            <button type="submit" className="btn btn-primary" disabled={savingReading} style={{ marginTop: '4px' }}>
+              {savingReading ? 'Menyimpan...' : '💾 SIMPAN PEMBACAAN'}
+            </button>
+          </form>
+
+          {/* SOP Guide */}
+          <div className="sop-guide-box">
+            <div className="sop-guide-title">📋 Panduan SOP Lapangan FM</div>
+            <ul className="sop-guide-list">
+              <li>Pastikan tang ampere sudah dikalibrasi dan menunjukkan angka stabil sebelum mencatat.</li>
+              <li>Catat beban pada saat jam puncak (08:00–12:00 &amp; 13:00–17:00). Jika beban &gt;85%, segera laporkan ke supervisor.</li>
+              <li>Jika MCB sudah trip, jangan di-reset tanpa izin supervisor. Buat tiket insiden terlebih dahulu.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════════════════════════════════════════════════════════════
+          BAGIAN C — Live Incident Feed
+      ═══════════════════════════════════════════════════════════════ */}
+      <section className="card" id="section-c">
+        <div className="card-head">
+          <div>
+            <div className="eyebrow" style={{ color: '#94a3b8' }}>REAL-TIME INCIDENT QUEUE — FACILITY MAINTENANCE</div>
+            <h2 className="card-title">
+              Bagian C: Live Incident Feed
+              <span style={{ marginLeft: '10px', fontSize: '13px', fontWeight: 500, color: '#f87171' }}>
+                {stats.activeCount} Laporan Terbuka
+              </span>
+            </h2>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {/* Filter tabs */}
             <div className="tab-row">
               <button type="button" className={`tab ${filter === 'ALL' ? 'active' : ''}`} onClick={() => setFilter('ALL')}>
                 Semua ({incidents.length})
@@ -428,108 +548,116 @@ export default function PanelsPage() {
                 Selesai ({stats.selesaiCount})
               </button>
             </div>
-          </div>
-        </div>
-
-        <div className="table-wrap" tabIndex={0} role="region" aria-label="Daftar tiket insiden kelistrikan">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID TIKET</th>
-                <th>LOKASI LAB</th>
-                <th>JENIS GANGGUAN / ANOMALI</th>
-                <th>PELAPOR</th>
-                <th>WAKTU</th>
-                <th>STATUS</th>
-                <th style={{ textAlign: 'right' }}>TINDAKAN FACILITY</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTickets.map((t) => {
-                const statusTone = t.status === 'SELESAI' ? 'success' : t.status === 'DITANGANI' ? 'info' : 'danger'
-                return (
-                  <tr key={t.id}>
-                    <td className="cell-strong">{ticketCode(t)}</td>
-                    <td><strong>{t.lab_name ?? `Lab ${t.lab_room_id}`}</strong></td>
-                    <td>
-                      <div style={{ maxWidth: '340px' }}>
-                        <strong style={{ color: '#ffffff' }}>{t.description}</strong>
-                        {t.status_note && (
-                          <div className="cell-muted" style={{ fontSize: '11px' }}>Catatan: {t.status_note}</div>
-                        )}
-                      </div>
-                    </td>
-                    <td>{t.reporter?.name ?? 'Petugas'}</td>
-                    <td className="cell-muted">{relativeTime(t.created_at)}</td>
-                    <td>
-                      <span className={`badge badge-${statusTone}`}>
-                        <span className="badge-dot" /> {t.status_label}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {t.status === 'BARU' ? (
-                        <div style={{ display: 'inline-flex', gap: '6px' }}>
-                          <button
-                            type="button"
-                            className="btn btn-xs btn-secondary"
-                            disabled={busyId === t.id}
-                            onClick={() => void handleAdvanceStatus(t, 'DITANGANI')}
-                          >
-                            Tangani
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-xs btn-primary"
-                            disabled={busyId === t.id}
-                            onClick={() => void handleAdvanceStatus(t, 'SELESAI')}
-                          >
-                            <CheckCircle2 size={12} />
-                            Selesai
-                          </button>
-                        </div>
-                      ) : t.status === 'DITANGANI' ? (
-                        <button
-                          type="button"
-                          className="btn btn-xs btn-primary"
-                          disabled={busyId === t.id}
-                          onClick={() => void handleAdvanceStatus(t, 'SELESAI')}
-                        >
-                          <CheckCircle2 size={12} />
-                          Tandai Selesai
-                        </button>
-                      ) : (
-                        <span className="badge badge-success">✓ Terverifikasi</span>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '14px' }}>
-          <span className="cell-muted" style={{ fontSize: '11px' }}>
-            Menampilkan {filteredTickets.length} dari {incidents.length} laporan insiden kelistrikan
-          </span>
-          <div style={{ display: 'flex', gap: '8px' }}>
             <button type="button" className="btn btn-secondary btn-sm" onClick={handleExportCsv}>
-              <Download size={14} /> Unduh Rekap Tiket (CSV)
+              <Download size={13} /> CSV
             </button>
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              onClick={() => {
-                setCreateError('')
-                setCreateOpen(true)
-              }}
+              onClick={() => { setCreateError(''); setCreateOpen(true) }}
             >
-              <Plus size={14} /> Buat Tiket Baru
+              <Plus size={13} /> Tiket Baru
             </button>
           </div>
         </div>
+
+        {/* Incident feed list */}
+        <div className="incident-feed-list">
+          {filteredTickets.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '32px', color: '#64748b', fontSize: '13px' }}>
+              <CheckCircle2 size={28} style={{ color: '#10b981', marginBottom: '8px' }} />
+              <div>Tidak ada laporan insiden dalam filter ini.</div>
+            </div>
+          )}
+
+          {filteredTickets.map((t) => {
+            const statusTone = t.status === 'SELESAI' ? 'success' : t.status === 'DITANGANI' ? 'info' : 'danger'
+            const statusText = t.status === 'BARU' ? 'BARU' : t.status === 'DITANGANI' ? 'DITANGANI' : 'SELESAI'
+            const labPanel = panelOverview?.labs.find((l) => l.id === t.lab_room_id)
+            const labSocket = labPanel?.panels.find((p) => p.group_type === 'SOCKET')
+
+            return (
+              <div key={t.id} className={`incident-feed-item${t.status === 'BARU' ? ' incident-feed-new' : ''}`}>
+                {/* Left: ticket meta */}
+                <div className="incident-feed-meta">
+                  <div className="incident-ticket-code">{ticketCode(t)}</div>
+                  <span className={`badge badge-${statusTone}`} style={{ fontSize: '10px' }}>
+                    <span className="badge-dot" /> {statusText}
+                  </span>
+                </div>
+
+                {/* Center: description */}
+                <div className="incident-feed-body">
+                  <div className="incident-feed-labname">{t.lab_name ?? `Lab ${t.lab_room_id}`}</div>
+                  <div className="incident-feed-desc">{t.description}</div>
+                  <div className="incident-feed-footer">
+                    <Clock size={11} />
+                    <span>{relativeTime(t.created_at)}</span>
+                    <span>·</span>
+                    <span>Pelapor: {t.reporter?.name ?? 'Petugas'}</span>
+                    {labSocket && (
+                      <>
+                        <span>·</span>
+                        <span style={{ color: labSocket.percent && labSocket.percent > 90 ? '#f87171' : '#94a3b8' }}>
+                          MCB Socket: {number(labSocket.percent ?? 0, 1)}% ({number(labSocket.load_watt ?? 0, 0)} W)
+                        </span>
+                      </>
+                    )}
+                    {t.status_note && (
+                      <>
+                        <span>·</span>
+                        <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Catatan: {t.status_note}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: actions */}
+                <div className="incident-feed-actions">
+                  {t.status === 'BARU' ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-secondary"
+                        disabled={busyId === t.id}
+                        onClick={() => void handleAdvanceStatus(t, 'DITANGANI')}
+                      >
+                        Tangani
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-primary"
+                        disabled={busyId === t.id}
+                        onClick={() => void handleAdvanceStatus(t, 'SELESAI')}
+                      >
+                        <CheckCircle2 size={12} /> Selesai
+                      </button>
+                    </>
+                  ) : t.status === 'DITANGANI' ? (
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-primary"
+                      disabled={busyId === t.id}
+                      onClick={() => void handleAdvanceStatus(t, 'SELESAI')}
+                    >
+                      <CheckCircle2 size={12} /> Tandai Selesai
+                    </button>
+                  ) : (
+                    <span className="badge badge-success" style={{ fontSize: '10px' }}>✓ Terverifikasi</span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '11px', color: '#64748b' }}>
+          <span>Menampilkan {filteredTickets.length} dari {incidents.length} laporan insiden</span>
+          <Zap size={12} style={{ color: '#10b981' }} />
+        </div>
       </section>
 
+      {/* ── Modals ───────────────────────────────────────────────────── */}
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Buat Tiket Insiden Listrik Baru">
         <form onSubmit={handleCreate} className="form-stack">
           <div className="field">
@@ -562,9 +690,7 @@ export default function PanelsPage() {
           </div>
           {createError && <div className="inline-error" role="alert" aria-live="polite">{createError}</div>}
           <div className="modal-actions">
-            <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
-              Batal
-            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>Batal</button>
             <button type="submit" className="btn btn-primary" disabled={creating}>
               <Send size={14} /> {creating ? 'Mengirim...' : 'Terbitkan Tiket'}
             </button>
@@ -573,15 +699,14 @@ export default function PanelsPage() {
       </Modal>
 
       <Modal open={readingOpen} onClose={() => setReadingOpen(false)} title="Catat Pembacaan Beban MCB">
-        <form onSubmit={handleSubmitReading} className="form-stack">
+        <form onSubmit={handleSubmitModalReading} className="form-stack">
           <div className="field">
             <label htmlFor="readingLab">Laboratorium</label>
             <select
               id="readingLab"
-              name="lab_room_id"
               className="input"
-              value={readingLabId}
-              onChange={(e) => setReadingLabId(e.target.value)}
+              value={modalReadingLabId}
+              onChange={(e) => setModalReadingLabId(e.target.value)}
               required
             >
               {(panelOverview?.labs ?? []).map((lab) => (
@@ -593,10 +718,9 @@ export default function PanelsPage() {
             <label htmlFor="readingGroup">Grup MCB</label>
             <select
               id="readingGroup"
-              name="group_type"
               className="input"
-              value={readingGroup}
-              onChange={(e) => setReadingGroup(e.target.value as 'SOCKET' | 'AC')}
+              value={modalReadingGroup}
+              onChange={(e) => setModalReadingGroup(e.target.value as 'SOCKET' | 'AC')}
             >
               <option value="SOCKET">Grup Stopkontak (MCB 10A)</option>
               <option value="AC">Grup AC Ruangan (MCB 40A)</option>
@@ -606,14 +730,13 @@ export default function PanelsPage() {
             <label htmlFor="readingWatt">Beban Terukur (Watt)</label>
             <input
               id="readingWatt"
-              name="load_watt"
               className="input"
               type="number"
               min="0"
               max="100000"
               step="1"
-              value={readingWatt}
-              onChange={(e) => setReadingWatt(e.target.value)}
+              value={modalReadingWatt}
+              onChange={(e) => setModalReadingWatt(e.target.value)}
               required
             />
           </div>
@@ -621,20 +744,17 @@ export default function PanelsPage() {
             <label htmlFor="readingNotes">Catatan (opsional)</label>
             <textarea
               id="readingNotes"
-              name="notes"
               className="input textarea"
               rows={2}
               value={readingNotes}
               onChange={(e) => setReadingNotes(e.target.value)}
             />
           </div>
-          {readingError && <div className="inline-error" role="alert" aria-live="polite">{readingError}</div>}
+          {modalReadingError && <div className="inline-error" role="alert" aria-live="polite">{modalReadingError}</div>}
           <div className="modal-actions">
-            <button type="button" className="btn btn-secondary" onClick={() => setReadingOpen(false)}>
-              Batal
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={savingReading}>
-              {savingReading ? 'Menyimpan...' : 'Simpan Pembacaan'}
+            <button type="button" className="btn btn-secondary" onClick={() => setReadingOpen(false)}>Batal</button>
+            <button type="submit" className="btn btn-primary" disabled={modalSaving}>
+              {modalSaving ? 'Menyimpan...' : 'Simpan Pembacaan'}
             </button>
           </div>
         </form>

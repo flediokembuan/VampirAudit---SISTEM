@@ -16,7 +16,10 @@ class MasterPcSpecController extends Controller
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = MasterPcSpec::query()->orderBy('ram_gb')->orderBy('storage_gb');
+        $query = MasterPcSpec::query()
+            ->withCount('audits')
+            ->orderBy('ram_gb')
+            ->orderBy('storage_gb');
 
         if (! ($request->boolean('include_inactive') && $request->user()->isAdmin())) {
             $query->where('is_active', true);

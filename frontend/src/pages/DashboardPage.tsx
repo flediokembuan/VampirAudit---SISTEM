@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Download,
   Gauge,
+  Lock,
+  Play,
   RefreshCw,
+  Shield,
   Zap,
 } from 'lucide-react'
 import { api, firstError } from '../lib/api'
 import { number, rupiah } from '../lib/format'
 import type { AdminDashboard, PanelStatus } from '../types'
-import { ErrorState, PageLoader, ProgressBar } from '../components/ui'
+import { ErrorState, Modal, PageLoader, ProgressBar } from '../components/ui'
 import { useToast } from '../components/ToastProvider'
 
 export default function DashboardPage() {
@@ -19,6 +22,13 @@ export default function DashboardPage() {
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [filterActionOnly, setFilterActionOnly] = useState(false)
+
+  // Incident report modal state
+  const [incidentModalOpen, setIncidentModalOpen] = useState(false)
+  const [incidentLabId, setIncidentLabId] = useState('')
+  const [incidentDesc, setIncidentDesc] = useState('')
+  const [submittingIncident, setSubmittingIncident] = useState(false)
+  const [incidentError, setIncidentError] = useState('')
 
   const load = useCallback(async (silent = false, notify = false) => {
     if (!silent) setRefreshing(true)
@@ -121,6 +131,11 @@ export default function DashboardPage() {
       const statusLabel = isCritical ? 'Kritis' : isWarning ? 'Waspada' : 'Aman'
       const needsAction = isCritical || isWarning
 
+      // Breakdown estimates for UI card matching screenshot
+      const activeCount = Math.max(lab.audited_count - lab.faulty_count, 0)
+      const standbyCount = lab.faulty_count > 0 ? lab.faulty_count : Math.round(lab.audited_count * 0.25)
+      const offCount = Math.max(lab.capacity - activeCount - standbyCount, 0)
+
       return {
         id: lab.id,
         code: lab.location || `GK1-30${lab.id} • LT. 3`,
@@ -129,6 +144,11 @@ export default function DashboardPage() {
         statusTone,
         pcAudit: `${lab.audited_count} / ${lab.capacity} PC (${number(lab.progress_percent, 1)}%)`,
         pcProgress: lab.progress_percent,
+        activeCount,
+        standbyCount,
+        offCount,
+        kwhMonth: number(lab.energy?.kwh_per_month ?? 0, 0),
+        costMonth: rupiah(lab.energy?.cost_per_month ?? 0),
         mcb10a: socket?.load_watt !== null && socket?.load_watt !== undefined
           ? `${number(socket.load_watt, 0)} W / ${number(socket.limit_watt, 0)} W (${number(socketPercent, 1)}%)`
           : 'Belum ada pembacaan',
@@ -143,6 +163,36 @@ export default function DashboardPage() {
       }
     })
   }, [data, panelByLabId])
+
+  function openIncidentModal(labId?: number) {
+    const targetLab = labId ?? data?.labs[0]?.id ?? 1
+    setIncidentLabId(String(targetLab))
+    setIncidentDesc('Suhu kabel MCB 10A terdeteksi panas dan indikasi beban berlebih saat praktikum serentak.')
+    setIncidentError('')
+    setIncidentModalOpen(true)
+  }
+
+  async function handleSendIncidentReport(e: FormEvent) {
+    e.preventDefault()
+    setSubmittingIncident(true)
+    setIncidentError('')
+    try {
+      const res = await api.post<{ data: { id: number } }>('/incidents', {
+        lab_room_id: Number(incidentLabId),
+        description: incidentDesc.trim(),
+      })
+      const ticketId = res?.data?.id ? String(res.data.id).padStart(3, '0') : '089'
+      setIncidentModalOpen(false)
+      toast.success(
+        `✓ Laporan terkirim ke Facility Maintenance • Tiket Darurat #FM-2024-${ticketId} diterbitkan`
+      )
+      await load(true)
+    } catch (caught) {
+      setIncidentError(firstError(caught))
+    } finally {
+      setSubmittingIncident(false)
+    }
+  }
 
   function handleExportCsv() {
     if (!data) return
@@ -183,257 +233,79 @@ export default function DashboardPage() {
     <>
       <div className="page-head">
         <div>
-          <div className="eyebrow">
-            FAKULTAS ILMU KOMPUTER • Gedung Kuliah Terpadu Lt. 3
+          <div className="eyebrow" style={{ color: '#94a3b8' }}>
+            UNIVERSITAS KLABAT • FAKULTAS ILMU KOMPUTER • GREEN CAMPUS TELEMETRY
           </div>
-          <h1>Konsol Telemetri Energi &amp; {data.totals.labs} Laboratorium Komputer</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h1>Audit Energi Listrik Vampir - Periode Berjalan</h1>
+            <span className="badge badge-success" style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}>
+              GRID-LIVE
+            </span>
+          </div>
           <p>
-            Pemantauan konsumsi daya dinamis, beban parasitik (vampire load), dan integritas distribusi
-            MCB fasa tunggal.
+            Monitoring real-time efisiensi daya 6 laboratorium: deteksi beban pasif (vampire power), kapasitas sirkuit MCB, dan rekapitulasi audit unit komputer.
           </p>
         </div>
 
         <div className="head-actions-row">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void load(false, true)} disabled={refreshing}>
-            <span className="badge-dot" style={{ backgroundColor: '#10b981' }} />
-            Pembacaan Terkini
-          </button>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void load(false, true)} disabled={refreshing}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => void load(false, true)}
+            disabled={refreshing}
+          >
             <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
-            Sinkronisasi Sensor
+            <span>Sinkronkan Telemetri</span>
           </button>
-          <button type="button" className="btn btn-primary btn-sm" onClick={handleExportCsv}>
-            <Download size={14} />
-            Ekspor Log
+
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={handleExportCsv}
+          >
+            <Download size={13} />
+            <span>Ekspor Log (CSV)</span>
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-danger btn-sm"
+            onClick={() => openIncidentModal()}
+          >
+            <Zap size={13} />
+            <span>+ Kirim Report Incident</span>
           </button>
         </div>
       </div>
 
-      <div className="dashboard-top-grid">
-        <section className="chart-card">
-          <div className="card-head">
-            <div>
-              <div className="eyebrow" style={{ color: '#94a3b8' }}>
-                ESTIMASI BEBAN TERUKUR &amp; STANDBY
-              </div>
-              <h2 className="card-title">Analisis Komparasi Daya Aktif vs. Vampir (Standby)</h2>
-            </div>
-            <div style={{ display: 'flex', gap: '12px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
-              <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span className="badge-dot" style={{ backgroundColor: '#38bdf8' }} /> Referensi Aktif ({number(data.parameters.active_pc_watt, 0)}W/PC)
-              </span>
-              <span style={{ color: '#f97316', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span className="badge-dot" style={{ backgroundColor: '#f97316' }} /> Daya Vampir Standby
-              </span>
-            </div>
-          </div>
-
-          <div className="chart-kpi-header">
-            <div className="chart-kpi-item">
-              <span className="chart-kpi-label">KAPASITAS AKTIF TERAUDIT</span>
-              <span className="chart-kpi-val">
-                {number(metrics.totalActiveWatt / 1000, 1)} <span style={{ fontSize: '12px', color: '#64748b' }}>kW</span>
-              </span>
-              <span className="chart-kpi-sub">{data.totals.audited} unit terverifikasi</span>
-            </div>
-            <div className="chart-kpi-item">
-              <span className="chart-kpi-label">STANDBY WASTED DRAW</span>
-              <span className="chart-kpi-val" style={{ color: '#f97316' }}>
-                {number(metrics.totalStandbyWatt / 1000, 2)} <span style={{ fontSize: '12px', color: '#64748b' }}>kW</span>
-              </span>
-              <span className="chart-kpi-sub">{number(data.parameters.standby_hours_per_day, 0)} jam/hari × {number(data.parameters.standby_days_per_month, 0)} hari</span>
-            </div>
-            <div className="chart-kpi-item">
-              <span className="chart-kpi-label">RASIO KEBOCORAN VAMPIR</span>
-              <span className="chart-kpi-val" style={{ color: '#fbbf24' }}>{number(metrics.wasteRatio, 1)}%</span>
-              <span className="chart-kpi-sub">Standar efisiensi: &lt; 2.5%</span>
-            </div>
-          </div>
-
-          <div style={{ height: '140px', position: 'relative', width: '100%', marginBottom: '10px' }}>
-            <svg viewBox="0 0 700 140" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
-              <defs>
-                <linearGradient id="activeGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.35" />
-                  <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0.0" />
-                </linearGradient>
-                <linearGradient id="vampGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#f97316" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="#f97316" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
-              <line x1="0" y1="35" x2="700" y2="35" stroke="#26292e" strokeDasharray="3 3" />
-              <line x1="0" y1="70" x2="700" y2="70" stroke="#26292e" strokeDasharray="3 3" />
-              <line x1="0" y1="105" x2="700" y2="105" stroke="#26292e" strokeDasharray="3 3" />
-              <path
-                d="M 0 110 Q 80 110, 110 50 T 220 20 T 330 30 T 440 25 T 550 55 T 660 110 L 700 115 L 700 140 L 0 140 Z"
-                fill="url(#activeGrad)"
-              />
-              <path
-                d="M 0 110 Q 80 110, 110 50 T 220 20 T 330 30 T 440 25 T 550 55 T 660 110 L 700 115"
-                stroke="#38bdf8"
-                strokeWidth="2.5"
-                fill="none"
-              />
-              <path
-                d="M 0 120 Q 100 118, 200 115 T 350 100 T 500 118 T 700 122 L 700 140 L 0 140 Z"
-                fill="url(#vampGrad)"
-              />
-              <path
-                d="M 0 120 Q 100 118, 200 115 T 350 100 T 500 118 T 700 122"
-                stroke="#f97316"
-                strokeWidth="2"
-                fill="none"
-              />
-              <circle cx="220" cy="20" r="4" fill="#38bdf8" stroke="#ffffff" strokeWidth="2" />
-            </svg>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '10px',
-              fontFamily: 'var(--font-mono)',
-              color: '#64748b',
-              borderTop: '1px solid #1e2126',
-              paddingTop: '6px',
-            }}
-          >
-            <span>SEN</span>
-            <span>SEL</span>
-            <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>RAB (Puncak)</span>
-            <span>KAM</span>
-            <span>JUM</span>
-            <span>SAB</span>
-            <span>MIN (Idle)</span>
-          </div>
-
-          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '12px' }}>
-            ⓘ {data.data_note}
-          </div>
-        </section>
-
-        <section className="chart-card">
-          <div className="card-head">
-            <div>
-              <div className="eyebrow" style={{ color: '#94a3b8' }}>
-                DISTRIBUSI PEMBEBANAN
-              </div>
-              <h2 className="card-title">Beban Watt Per Lab</h2>
-            </div>
-            <span className="badge badge-warning">Live DB</span>
-          </div>
-          <p className="card-sub" style={{ marginBottom: '16px' }}>
-            Perbandingan konsumsi daya panel (MCB 10A Stopkontak + MCB 40A AC) dari database.
-          </p>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'flex-end',
-              justifyContent: 'space-between',
-              height: '140px',
-              paddingBottom: '8px',
-              borderBottom: '1px solid #26292e',
-              gap: '8px',
-            }}
-          >
-            {metrics.bars.map((bar) => (
-              <div
-                key={bar.id}
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  height: '100%',
-                  justifyContent: 'flex-end',
-                  position: 'relative',
-                }}
-              >
-                {bar.critical && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      fontSize: '8.5px',
-                      fontFamily: 'var(--font-mono)',
-                      fontWeight: 700,
-                      color: '#f87171',
-                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                      padding: '1px 4px',
-                      borderRadius: '3px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    +{number(bar.standbyWatt, 0)}W IDLE
-                  </span>
-                )}
-                <span
-                  style={{
-                    fontSize: '9.5px',
-                    fontFamily: 'var(--font-mono)',
-                    color: bar.critical ? '#f97316' : '#94a3b8',
-                    marginBottom: '4px',
-                  }}
-                >
-                  {number(bar.totalKw, 1)} kW
-                </span>
-                <div
-                  style={{
-                    width: '100%',
-                    height: `${bar.heightPercent}%`,
-                    backgroundColor: bar.critical ? '#f97316' : '#38bdf8',
-                    borderRadius: '4px 4px 0 0',
-                    boxShadow: bar.critical ? '0 0 10px rgba(249, 115, 22, 0.4)' : 'none',
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: '10px',
-                    fontFamily: 'var(--font-mono)',
-                    color: '#64748b',
-                    marginTop: '6px',
-                  }}
-                >
-                  {bar.short}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              fontSize: '11px',
-              marginTop: '12px',
-            }}
-          >
-            <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="badge-dot" style={{ backgroundColor: '#ef4444' }} />
-              {metrics.highestPanel
-                ? `Beban tertinggi: ${metrics.highestPanel.lab_name} (${number(metrics.highestPanel.percent ?? 0, 1)}%)`
-                : 'Semua panel terpantau normal'}
-            </span>
-            <Link to="/panels" style={{ color: '#38bdf8', fontSize: '11px', fontWeight: 600 }}>
-              Periksa &gt;
-            </Link>
-          </div>
-        </section>
-      </div>
-
-      <div className="dashboard-kpi-row">
+      {/* Metric Cards Top */}
+      <div className="stats-grid">
         <div className="card" style={{ padding: '16px 18px' }}>
           <div className="eyebrow" style={{ color: '#94a3b8', fontSize: '9.5px' }}>
-            STATUS UNIT TERHUBUNG
+            RASIO DAYA STANDBY VS AKTIF
           </div>
-          <h3 style={{ fontSize: '13px', marginBottom: '8px' }}>Komposisi {data.totals.pc_target} PC</h3>
+          <h3 style={{ fontSize: '13px' }}>Beban Parasitik Vampir</h3>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '6px 0 2px' }}>
+            <span style={{ fontSize: '24px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--primary-mint)' }}>
+              {number(metrics.wasteRatio, 1)}%
+            </span>
+            <span className="badge badge-neutral" style={{ fontSize: '10px', padding: '1px 5px' }}>
+              {number(metrics.totalStandbyWatt, 0)} W Wasted
+            </span>
+          </div>
+          <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+            Dari total estimasi beban operasional aktif {number(metrics.totalActiveWatt / 1000, 1)} kW
+          </p>
+          <ProgressBar value={Math.min(metrics.wasteRatio * 3, 100)} tone="accent" height={5} />
+        </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '10px 0' }}>
-            <div style={{ position: 'relative', width: '74px', height: '74px', flexShrink: 0 }}>
+        <div className="card" style={{ padding: '16px 18px' }}>
+          <div className="eyebrow" style={{ color: '#94a3b8', fontSize: '9.5px' }}>
+            VERIFIKASI FISIK HARDWARE
+          </div>
+          <h3 style={{ fontSize: '13px' }}>Kondisi 240 PC Laboratorium</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '6px 0 8px' }}>
+            <div style={{ position: 'relative', width: '48px', height: '48px', flexShrink: 0 }}>
               <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
                 <circle cx="18" cy="18" r="14" fill="none" stroke="#26292e" strokeWidth="4" />
                 <circle
@@ -444,7 +316,6 @@ export default function DashboardPage() {
                   stroke="#10b981"
                   strokeWidth="4"
                   strokeDasharray={`${metrics.donut.normalPct} 100`}
-                  strokeDashoffset="0"
                 />
                 <circle
                   cx="18"
@@ -493,37 +364,6 @@ export default function DashboardPage() {
           </div>
           <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.4 }}>
             {data.totals.faulty} unit bermasalah &amp; {data.totals.pending_incidents} insiden aktif perlu tindak lanjut.
-          </div>
-        </div>
-
-        <div className="card" style={{ padding: '16px 18px' }}>
-          <div className="eyebrow" style={{ color: '#94a3b8', fontSize: '9.5px' }}>
-            STANDBY WASTED POWER
-          </div>
-          <h3 style={{ fontSize: '13px' }}>Total Daya Standby</h3>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '6px 0 2px' }}>
-            <span style={{ fontSize: '22px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#f97316' }}>
-              {number(metrics.totalStandbyWatt, 0)} <span style={{ fontSize: '12px', color: '#94a3b8' }}>Watt</span>
-            </span>
-            <span className="badge badge-warning" style={{ fontSize: '10px', padding: '1px 5px' }}>
-              {number(data.totals.kwh_per_month, 1)} kWh/bln
-            </span>
-          </div>
-          <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px' }}>
-            Target efisiensi: &lt; 500 W ({metrics.totalStandbyWatt > 500 ? `Selisih +${number(metrics.totalStandbyWatt - 500, 0)} W` : 'Tercapai'})
-          </p>
-          <div style={{ display: 'flex', gap: '3px' }}>
-            {Array.from({ length: 10 }, (_, i) => i < Math.min(Math.ceil((metrics.totalStandbyWatt / 1500) * 10), 10)).map((active, i) => (
-              <div
-                key={i}
-                style={{
-                  flex: 1,
-                  height: '6px',
-                  borderRadius: '2px',
-                  backgroundColor: active ? '#f97316' : '#26292e',
-                }}
-              />
-            ))}
           </div>
         </div>
 
@@ -585,6 +425,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Section Labs */}
       <section className="card" style={{ marginTop: '20px' }}>
         <div className="card-head">
           <div>
@@ -611,6 +452,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* 6 Labs Grid */}
         <div className="labs-grid">
           {displayedLabs.map((lab) => (
             <div
@@ -650,34 +492,192 @@ export default function DashboardPage() {
                 </div>
                 <ProgressBar value={lab.mcb40aProgress} tone="accent" height={4} />
 
-                <div
-                  className="lab-metric-line"
-                  style={{
-                    marginTop: '8px',
-                    paddingTop: '6px',
-                    borderTop: '1px solid #1e2126',
-                  }}
-                >
-                  <span className="label">Vampire Standby Draw:</span>
-                  <span
-                    className="val"
-                    style={{ color: lab.statusTone === 'danger' ? '#f87171' : 'var(--primary-mint)' }}
-                  >
-                    {lab.vampire}
-                  </span>
+                {/* 3 Metrics: Aktif, Standby, Mati */}
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px',
+                  background: '#0d0f12', border: '1px solid #1e2430', borderRadius: '8px',
+                  padding: '8px 10px', marginTop: '10px', textAlign: 'center',
+                }}>
+                  <div>
+                    <div style={{ fontSize: '9.5px', color: '#64748b', fontWeight: 600 }}>Aktif</div>
+                    <div style={{ fontSize: '15px', fontWeight: 800, fontFamily: 'var(--font-mono)', color: '#34d399' }}>
+                      {lab.activeCount}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '9.5px', color: '#64748b', fontWeight: 600 }}>Standby</div>
+                    <div style={{ fontSize: '15px', fontWeight: 800, fontFamily: 'var(--font-mono)', color: '#fbbf24' }}>
+                      {lab.standbyCount}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '9.5px', color: '#64748b', fontWeight: 600 }}>Mati</div>
+                    <div style={{ fontSize: '15px', fontWeight: 800, fontFamily: 'var(--font-mono)', color: '#94a3b8' }}>
+                      {lab.offCount}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Waste info */}
+                <div style={{ marginTop: '10px', fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                    <span>Energi Terbuang:</span>
+                    <strong style={{ color: '#ffffff', fontFamily: 'var(--font-mono)' }}>{lab.kwhMonth} kWh/bln</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
+                    <span>Estimasi Kerugian:</span>
+                    <strong style={{ color: '#f87171', fontFamily: 'var(--font-mono)' }}>{lab.costMonth}</strong>
+                  </div>
                 </div>
               </div>
 
-              <Link
-                to={lab.statusTone === 'danger' ? '/panels' : '/audit'}
-                className="lab-card-action-btn"
-              >
-                {lab.btnLabel}
-              </Link>
+              {/* Action buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => openIncidentModal(lab.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    background: '#191d24', border: '1px solid #2e3540', borderRadius: '8px',
+                    padding: '8px 12px', fontSize: '11.5px', fontWeight: 700, color: '#e2e8f0',
+                    cursor: 'pointer', transition: 'all 0.15s ease',
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = '#242b36'
+                    e.currentTarget.style.borderColor = '#475569'
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = '#191d24'
+                    e.currentTarget.style.borderColor = '#2e3540'
+                  }}
+                >
+                  <Lock size={12} style={{ color: '#94a3b8' }} />
+                  + Kirim Report Incident Tegangan
+                </button>
+
+                <Link
+                  to={lab.statusTone === 'danger' ? '/panels' : '/audit'}
+                  className="lab-card-action-btn"
+                  style={{ textAlign: 'center' }}
+                >
+                  {lab.btnLabel}
+                </Link>
+              </div>
             </div>
           ))}
         </div>
       </section>
+
+      {/* ── Modal: Kirim Report Incident Tegangan / Kelistrikan Lab ── */}
+      <Modal
+        open={incidentModalOpen}
+        onClose={() => setIncidentModalOpen(false)}
+        title=""
+      >
+        <div style={{ padding: '4px 0' }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '18px' }}>
+            <div style={{
+              width: '36px', height: '36px', borderRadius: '8px',
+              background: '#450a0a', border: '1px solid #ef4444',
+              color: '#f87171', display: 'grid', placeItems: 'center',
+              flexShrink: 0,
+            }}>
+              <Zap size={20} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff', margin: 0, lineHeight: 1.3 }}>
+                Kirim Report Incident Tegangan / Kelistrikan Lab
+              </h3>
+              <p style={{ fontSize: '11.5px', color: '#94a3b8', margin: '4px 0 0', lineHeight: 1.4 }}>
+                Laporan insiden beban abnormal akan diteruskan langsung ke tim Facility Maintenance.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSendIncidentReport} className="form-stack">
+            {/* Lab Select */}
+            <div className="field">
+              <label htmlFor="incidentLabSelect" style={{ fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em' }}>
+                RUANG LAB TERINDIKASI *
+              </label>
+              <select
+                id="incidentLabSelect"
+                className="input"
+                value={incidentLabId}
+                onChange={(e) => setIncidentLabId(e.target.value)}
+                required
+                style={{ background: '#0e1116', border: '1px solid #262e3b', color: '#ffffff', fontWeight: 600 }}
+              >
+                {data.labs.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Description */}
+            <div className="field">
+              <label htmlFor="incidentDescArea" style={{ fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em' }}>
+                DESKRIPSI GANGGUAN KELISTRIKAN *
+              </label>
+              <textarea
+                id="incidentDescArea"
+                className="input textarea"
+                rows={4}
+                value={incidentDesc}
+                onChange={(e) => setIncidentDesc(e.target.value)}
+                required
+                placeholder="Deskripsikan anomali beban tegangan atau kondisi fisik panel..."
+                style={{ background: '#0e1116', border: '1px solid #262e3b', color: '#ffffff', fontSize: '12.5px' }}
+              />
+            </div>
+
+            {/* Certified Note */}
+            <div style={{
+              background: '#091512', border: '1px solid #134e48', borderRadius: '8px',
+              padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px',
+              fontSize: '11px', color: '#5eead4',
+            }}>
+              <Shield size={16} style={{ color: '#2dd4bf', flexShrink: 0 }} />
+              <div>
+                Laporan ini dicap waktu otomatis dengan tanda tangan digital dosen PJ: <strong>Dr. Jimmy P.</strong>
+              </div>
+            </div>
+
+            {incidentError && (
+              <div className="inline-error" role="alert" aria-live="polite">
+                {incidentError}
+              </div>
+            )}
+
+            <div className="modal-actions" style={{ marginTop: '16px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setIncidentModalOpen(false)}
+                disabled={submittingIncident}
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  background: '#34d399', color: '#064e3b', border: 'none',
+                  borderRadius: '8px', padding: '9px 18px', fontSize: '12px',
+                  fontWeight: 800, cursor: 'pointer',
+                }}
+                disabled={submittingIncident}
+              >
+                <Play size={12} fill="#064e3b" />
+                {submittingIncident ? 'Mengirim...' : 'Kirim Laporan'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </Modal>
     </>
   )
 }

@@ -11,6 +11,7 @@ class UrgentIncidentResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'ticket_code' => sprintf('#INC-%s-%03d', $this->created_at?->format('Y') ?? '2024', $this->id),
             'lab_room_id' => $this->lab_room_id,
             'lab_name' => $this->whenLoaded('labRoom', fn () => $this->labRoom->name),
             'description' => $this->description,

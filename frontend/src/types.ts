@@ -82,6 +82,7 @@ export interface Spec {
   label: string
   standby_watt: number
   is_active: boolean
+  audits_count?: number
 }
 
 export interface AuditSpec {
@@ -163,6 +164,7 @@ export interface PanelReading {
 
 export interface Incident {
   id: number
+  ticket_code?: string
   lab_room_id: number
   lab_name?: string
   description: string

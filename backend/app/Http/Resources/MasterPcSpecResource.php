@@ -18,6 +18,7 @@ class MasterPcSpecResource extends JsonResource
             'label' => $this->label,
             'standby_watt' => (float) $this->standby_watt,
             'is_active' => $this->is_active,
+            'audits_count' => (int) ($this->audits_count ?? 0),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
