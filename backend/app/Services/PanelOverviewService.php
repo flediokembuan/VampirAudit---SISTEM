@@ -15,7 +15,7 @@ class PanelOverviewService
         $labs = LabRoom::query()
             ->where('is_active', true)
             ->with('panelLimits')
-            ->orderBy('name')
+            ->orderBy('id')
             ->get();
 
         $latestReadings = PanelReading::query()

@@ -10,14 +10,14 @@ class MasterPcSpecSeeder extends Seeder
     public function run(): void
     {
         $specs = [
-            ['ram_gb' => 4, 'storage_gb' => 256, 'storage_type' => 'SSD', 'standby_watt' => 4.5],
-            ['ram_gb' => 8, 'storage_gb' => 256, 'storage_type' => 'SSD', 'standby_watt' => 5.0],
-            ['ram_gb' => 8, 'storage_gb' => 512, 'storage_type' => 'SSD', 'standby_watt' => 5.0],
-            ['ram_gb' => 16, 'storage_gb' => 256, 'storage_type' => 'SSD', 'standby_watt' => 5.2],
-            ['ram_gb' => 16, 'storage_gb' => 512, 'storage_type' => 'SSD', 'standby_watt' => 5.5],
-            ['ram_gb' => 16, 'storage_gb' => 512, 'storage_type' => 'NVME', 'standby_watt' => 5.0],
-            ['ram_gb' => 32, 'storage_gb' => 512, 'storage_type' => 'SSD', 'standby_watt' => 6.0],
-            ['ram_gb' => 32, 'storage_gb' => 1024, 'storage_type' => 'NVME', 'standby_watt' => 6.5],
+            ['ram_gb' => 16, 'storage_gb' => 512, 'storage_type' => 'SSD', 'cpu' => 'Intel Core i5-12400', 'standby_watt' => 3.80],
+            ['ram_gb' => 16, 'storage_gb' => 256, 'storage_type' => 'SSD', 'cpu' => 'Intel Core i5-11400', 'standby_watt' => 3.90],
+            ['ram_gb' => 32, 'storage_gb' => 1000, 'storage_type' => 'NVME', 'cpu' => 'AMD Ryzen 7 5700X', 'standby_watt' => 4.20],
+            ['ram_gb' => 32, 'storage_gb' => 512, 'storage_type' => 'SSD', 'cpu' => 'Intel Core i7-11700 Dual NIC', 'standby_watt' => 14.20],
+            ['ram_gb' => 64, 'storage_gb' => 1000, 'storage_type' => 'NVME', 'cpu' => 'RTX 4070 • Core i7-13700KF', 'standby_watt' => 4.50],
+            ['ram_gb' => 16, 'storage_gb' => 512, 'storage_type' => 'NVME', 'cpu' => 'Apple M2 Mac Mini', 'standby_watt' => 1.80],
+            ['ram_gb' => 8, 'storage_gb' => 256, 'storage_type' => 'SSD', 'cpu' => 'Intel Core i5-10400', 'standby_watt' => 2.20],
+            ['ram_gb' => 8, 'storage_gb' => 512, 'storage_type' => 'SSD', 'cpu' => 'Intel Core i5-10400', 'standby_watt' => 6.90],
         ];
 
         foreach ($specs as $spec) {

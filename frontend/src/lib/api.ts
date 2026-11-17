@@ -1,5 +1,6 @@
 import {
   mockAudits,
+  mockBills,
   mockDashboard,
   mockExecutive,
   mockIncidents,
@@ -198,6 +199,36 @@ function handleMockFallback<T>(path: string, options: RequestOptions = {}): T {
   if (urlPath === '/users') {
     const list = Object.values(mockUsers)
     return { data: list, meta: { total: list.length } } as T
+  }
+
+  if (urlPath === '/labs') {
+    return {
+      data: mockProgressLabs.map((l) => ({
+        id: l.id,
+        name: l.name,
+        location: l.location,
+        capacity: l.capacity,
+        standby_hours_per_day: null,
+        standby_days_per_month: null,
+        is_active: true,
+        audited_count: l.audited_count,
+      })),
+    } as T
+  }
+
+  if (urlPath === '/settings') {
+    return {
+      data: [],
+      parameters: mockDashboard.parameters,
+    } as T
+  }
+
+  if (urlPath === '/settings/history') {
+    return { data: [] } as T
+  }
+
+  if (urlPath === '/bills') {
+    return { data: mockBills } as T
   }
 
   return {} as T

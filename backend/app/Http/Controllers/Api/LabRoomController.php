@@ -16,7 +16,7 @@ class LabRoomController extends Controller
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = LabRoom::query()->withCount('audits')->orderBy('name');
+        $query = LabRoom::query()->withCount('audits')->orderBy('id');
 
         $includeInactive = $request->boolean('include_inactive') && $request->user()->isAdmin();
 

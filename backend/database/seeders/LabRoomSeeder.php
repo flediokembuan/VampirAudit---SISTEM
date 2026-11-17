@@ -10,12 +10,12 @@ class LabRoomSeeder extends Seeder
     public function run(): void
     {
         $labs = [
-            ['name' => 'Lab 1', 'location' => 'Gedung FIK · Lantai 2', 'capacity' => 38],
-            ['name' => 'Lab 2', 'location' => 'Gedung FIK · Lantai 2', 'capacity' => 40],
-            ['name' => 'Lab 3', 'location' => 'Gedung FIK · Lantai 2', 'capacity' => 36],
-            ['name' => 'Lab 4', 'location' => 'Gedung FIK · Lantai 3', 'capacity' => 39],
-            ['name' => 'Lab 5', 'location' => 'Gedung FIK · Lantai 3', 'capacity' => 40],
-            ['name' => 'Lab 6', 'location' => 'Gedung FIK · Lantai 3', 'capacity' => 37],
+            ['name' => 'Lab 1 Komputer Dasar', 'location' => 'GK1-301 • LT. 3', 'capacity' => 40],
+            ['name' => 'Lab 2 Rekayasa Perangkat Lunak', 'location' => 'GK1-302 • LT. 3', 'capacity' => 40],
+            ['name' => 'Lab 3 Jaringan & Keamanan', 'location' => 'GK1-303 • LT. 3', 'capacity' => 40],
+            ['name' => 'Lab 4 AI & Data Science', 'location' => 'GK1-304 • LT. 3', 'capacity' => 40],
+            ['name' => 'Lab 5 Multimedia & Desain', 'location' => 'GK1-305 • LT. 3', 'capacity' => 40],
+            ['name' => 'Lab 6 Riset & Inovasi', 'location' => 'GK1-306 • LT. 3', 'capacity' => 40],
         ];
 
         foreach ($labs as $lab) {

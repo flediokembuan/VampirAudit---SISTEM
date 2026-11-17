@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AuditPcLog;
 use App\Models\Setting;
 use Illuminate\Support\Collection;
 
@@ -67,7 +68,7 @@ class EnergyCalculator
     }
 
     /**
-     * @param  Collection<int, \App\Models\AuditPcLog>  $audits
+     * @param  Collection<int, AuditPcLog>  $audits
      */
     public function estimateForAudits(Collection $audits, ?array $parameters = null): array
     {

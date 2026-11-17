@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Models\AuditPcLog;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class UpdateAuditPcLogRequest extends FormRequest
@@ -18,6 +18,7 @@ class UpdateAuditPcLogRequest extends FormRequest
         return [
             'pc_number' => ['sometimes', 'required', 'string', 'max:50'],
             'master_pc_spec_id' => ['sometimes', 'required', 'integer', 'exists:master_pc_specs,id'],
+            'standby_watt_snapshot' => ['sometimes', 'numeric', 'min:0', 'max:10000'],
             'is_faulty' => ['sometimes', 'boolean'],
             'fault_note' => ['nullable', 'string', 'max:1000'],
         ];
@@ -34,7 +35,7 @@ class UpdateAuditPcLogRequest extends FormRequest
                 $audit = $this->route('audit_pc_log');
                 $pcNumber = $this->string('pc_number', $audit->pc_number)->trim()->toString();
 
-                $duplicate = \App\Models\AuditPcLog::query()
+                $duplicate = AuditPcLog::query()
                     ->whereKeyNot($audit->getKey())
                     ->where('lab_room_id', $audit->lab_room_id)
                     ->where('pc_number', $pcNumber)

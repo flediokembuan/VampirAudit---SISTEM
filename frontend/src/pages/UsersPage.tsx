@@ -197,11 +197,11 @@ export default function UsersPage() {
         description="Kelola akun 4 peran (Dosen Admin, Auditor, Maintenance, Pimpinan). Akun dinonaktifkan (is_active = false), bukan dihapus (FR-01)."
         actions={
           <>
-            <button className="btn btn-secondary" onClick={() => void load()} disabled={refreshing}>
+            <button type="button" className="btn btn-secondary" onClick={() => void load()} disabled={refreshing}>
               <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
               Perbarui
             </button>
-            <button className="btn btn-primary" onClick={openCreate}>
+            <button type="button" className="btn btn-primary" onClick={openCreate}>
               <UserPlus size={16} />
               Tambah pengguna
             </button>
@@ -296,7 +296,7 @@ export default function UsersPage() {
             }
           />
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Daftar akun pengguna">
             <table className="data-table users-table">
               <thead>
                 <tr>
@@ -339,6 +339,7 @@ export default function UsersPage() {
                       <td>
                         <div className="row-actions">
                           <button
+                            type="button"
                             className="icon-btn icon-btn-sm"
                             onClick={() => openEdit(user)}
                             aria-label={`Ubah ${user.name}`}
@@ -347,6 +348,7 @@ export default function UsersPage() {
                             <Pencil size={14} />
                           </button>
                           <button
+                            type="button"
                             className={`icon-btn icon-btn-sm ${user.is_active ? 'danger' : ''}`}
                             onClick={() => void toggleActive(user)}
                             disabled={busyId === user.id || (isSelf && user.is_active)}
@@ -472,7 +474,7 @@ export default function UsersPage() {
             </span>
           </label>
 
-          {formError && <div className="inline-error">{formError}</div>}
+          {formError && <div className="inline-error" role="alert" aria-live="polite">{formError}</div>}
         </form>
       </Modal>
     </>

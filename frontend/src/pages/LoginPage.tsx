@@ -3,16 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
   Bell,
-  Check,
   Eye,
   EyeOff,
-  Gauge,
   Lock,
   Mail,
-  Monitor,
   ShieldAlert,
-  Sliders,
-  Sparkles,
   Zap,
 } from 'lucide-react'
 import { roleHome, useAuth } from '../auth/AuthContext'
@@ -31,7 +26,7 @@ const demoAccounts: DemoAccount[] = [
   {
     role: 'ADMIN',
     name: 'Dosen Admin',
-    email: 'admin@unklab.ac.id',
+    email: 'dosen.admin@unklab.ac.id',
     title: 'Dosen Admin',
     desc: 'Hak Akses Penuh',
     code: 'L-02 Telemetri & L-06 RBAC',
@@ -253,11 +248,16 @@ export default function LoginPage() {
                 <Mail size={16} />
                 <input
                   id="loginEmail"
+                  name="email"
                   className="input"
                   type="email"
+                  autoComplete="username"
+                  spellCheck={false}
+                  enterKeyHint="next"
                   placeholder="dosen.admin@unklab.ac.id"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  aria-invalid={Boolean(error)}
                   required
                 />
               </div>
@@ -274,18 +274,23 @@ export default function LoginPage() {
                 <Lock size={16} />
                 <input
                   id="loginPassword"
+                  name="password"
                   className="input"
                   type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  enterKeyHint="done"
                   placeholder="Masukkan kata sandi"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  aria-invalid={Boolean(error)}
                   required
                 />
                 <button
                   type="button"
                   className="password-toggle"
                   onClick={() => setShowPassword(!showPassword)}
-                  aria-label="Toggle password visibility"
+                  aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                  aria-pressed={showPassword}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -306,7 +311,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="inline-error" style={{ marginBottom: '14px' }}>
+              <div className="inline-error" role="alert" aria-live="polite" style={{ marginBottom: '14px' }}>
                 <ShieldAlert size={16} />
                 <span>{error}</span>
               </div>

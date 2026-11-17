@@ -22,7 +22,7 @@ class LabAuditSummaryService
 
         return LabRoom::query()
             ->where('is_active', true)
-            ->orderBy('name')
+            ->orderBy('id')
             ->get()
             ->map(function (LabRoom $lab) use ($aggregates) {
                 $aggregate = $aggregates->get($lab->id);

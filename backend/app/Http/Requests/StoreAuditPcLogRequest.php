@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Models\AuditPcLog;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class StoreAuditPcLogRequest extends FormRequest
@@ -19,6 +19,7 @@ class StoreAuditPcLogRequest extends FormRequest
             'lab_room_id' => ['required', 'integer', 'exists:lab_rooms,id'],
             'pc_number' => ['required', 'string', 'max:50'],
             'master_pc_spec_id' => ['required', 'integer', 'exists:master_pc_specs,id'],
+            'standby_watt_snapshot' => ['sometimes', 'numeric', 'min:0', 'max:10000'],
             'is_faulty' => ['sometimes', 'boolean'],
             'fault_note' => ['nullable', 'string', 'max:1000'],
         ];
@@ -32,7 +33,7 @@ class StoreAuditPcLogRequest extends FormRequest
                     return;
                 }
 
-                $duplicate = \App\Models\AuditPcLog::query()
+                $duplicate = AuditPcLog::query()
                     ->where('lab_room_id', $this->integer('lab_room_id'))
                     ->where('pc_number', $this->string('pc_number')->trim()->toString())
                     ->exists();

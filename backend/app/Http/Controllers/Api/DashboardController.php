@@ -67,6 +67,7 @@ class DashboardController extends Controller
             ],
             'labs' => $labs,
             'panels' => [
+                'labs' => $panels['labs'],
                 'summary' => $panels['summary'],
                 'warnings' => array_slice($panels['warnings'], 0, 6),
                 'data_note' => $panels['data_note'],

@@ -5,10 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\ExecutiveReportService;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\JsonResponse;
 
 class ExecutiveReportController extends Controller
 {
-    public function summary(ExecutiveReportService $reportService): \Illuminate\Http\JsonResponse
+    public function summary(ExecutiveReportService $reportService): JsonResponse
     {
         return response()->json($reportService->payload());
     }

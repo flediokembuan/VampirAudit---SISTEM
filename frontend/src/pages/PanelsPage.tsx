@@ -1,249 +1,214 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  AlertCircle,
   AlertTriangle,
-  ArrowRight,
-  BellOff,
   CheckCircle2,
   Clock,
   Download,
-  Flame,
   Gauge,
   Plus,
-  RefreshCw,
   Send,
   ShieldAlert,
   VolumeX,
-  Wrench,
   Zap,
 } from 'lucide-react'
 import { api, firstError } from '../lib/api'
-import { Badge, Modal, ProgressBar } from '../components/ui'
+import { number, relativeTime } from '../lib/format'
+import { ErrorState, Modal, PageLoader, ProgressBar } from '../components/ui'
 import { useToast } from '../components/ToastProvider'
-import type { Incident, PanelOverview } from '../types'
+import type { Incident, Paginated, PanelOverview, PanelStatus, Parameters } from '../types'
+
+function ticketCode(incident: Incident): string {
+  const year = new Date(incident.created_at).getFullYear() || 2026
+  return `#TKT-${year}-${String(incident.id).padStart(3, '0')}`
+}
 
 export default function PanelsPage() {
   const toast = useToast()
-  const [filter, setFilter] = useState<'ALL' | 'URGENT' | 'WORKING' | 'RESOLVED'>('ALL')
+  const [panelOverview, setPanelOverview] = useState<(PanelOverview & { parameters?: Parameters }) | null>(null)
+  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [filter, setFilter] = useState<'ALL' | 'BARU' | 'DITANGANI' | 'SELESAI'>('ALL')
   const [silenced, setSilenced] = useState(false)
+  const [busyId, setBusyId] = useState<number | null>(null)
+
   const [createOpen, setCreateOpen] = useState(false)
-  const [newLab, setNewLab] = useState('1')
+  const [newLab, setNewLab] = useState('')
   const [newDesc, setNewDesc] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
 
-  const [tickets, setTickets] = useState([
-    {
-      id: '#TKT-2025-089',
-      lab: 'Lab 3',
-      sub: 'Baris C (PC 29)',
-      desc: 'Kabel Power Terkelupas & Stopkontak Goyang',
-      detail: 'Terjadi spark kecil saat kabel monitor digoyang, memicu lonjakan watt.',
-      reporter: 'Auditor Lapangan — Mario P.',
-      time: '15 menit lalu',
-      priority: 'URGENT',
-      priorityTone: 'danger',
-      status: 'SEDANG DIPERIKSA',
-      statusTone: 'info',
-    },
-    {
-      id: '#TKT-2025-088',
-      lab: 'Lab 4',
-      sub: 'Split AC Unit 2',
-      desc: 'Kompresor AC Dengung Keras & Arus Melonjak',
-      detail: 'Ampere AC2 terukur 11.2A (Standar 7.5A). Filter blower diduga tersumbat total.',
-      reporter: 'Dosen — Dr. Edwin T.',
-      time: '42 menit lalu',
-      priority: 'URGENT',
-      priorityTone: 'danger',
-      status: 'MENUNGGU TEKNISI',
-      statusTone: 'warning',
-    },
-    {
-      id: '#TKT-2025-087',
-      lab: 'Lab 1',
-      sub: 'Hub Dosen & Switch',
-      desc: 'UPS Rak Server Mengeluarkan Bunyi Alarm Berkala',
-      detail: 'Baterai internal degrade, standby consumption naik ke 190W saat idle malam.',
-      reporter: 'Facility — Randy S.',
-      time: '2 jam lalu',
-      priority: 'MEDIUM',
-      priorityTone: 'warning',
-      status: 'SEDANG DIPERIKSA',
-      statusTone: 'info',
-    },
-    {
-      id: '#TKT-2025-085',
-      lab: 'Lab 2',
-      sub: 'Box Panel Sekring',
-      desc: 'Baut Terminal Netral MCB Mengalami Korosi Ringan',
-      detail: 'Pemeriksaan rutin mendeteksi suhu terminal 43°C dengan thermal gun.',
-      reporter: 'Auditor Lapangan — Mario P.',
-      time: '4 jam lalu',
-      priority: 'MEDIUM',
-      priorityTone: 'warning',
-      status: 'SEDANG DIPERIKSA',
-      statusTone: 'info',
-    },
-    {
-      id: '#TKT-2025-082',
-      lab: 'Lab 5',
-      sub: 'Meja Asisten 01',
-      desc: 'Stopkontak Arde Tidak Menyentuh (Grounding Floating)',
-      detail: 'Sudah diganti stopkontak Schneider baru & tes arde aman (0.8 Ohm).',
-      reporter: 'Dosen — Sarah K.',
-      time: 'Kemarin',
-      priority: 'LOW',
-      priorityTone: 'neutral',
-      status: 'SELESAI',
-      statusTone: 'success',
-    },
-  ])
+  const [readingOpen, setReadingOpen] = useState(false)
+  const [readingLabId, setReadingLabId] = useState('')
+  const [readingGroup, setReadingGroup] = useState<'SOCKET' | 'AC'>('SOCKET')
+  const [readingWatt, setReadingWatt] = useState('')
+  const [readingNotes, setReadingNotes] = useState('')
+  const [savingReading, setSavingReading] = useState(false)
+  const [readingError, setReadingError] = useState('')
 
-  function handleComplete(id: string) {
-    setTickets((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status: 'SELESAI', statusTone: 'success' } : t))
-    )
-    toast.success(`Tiket ${id} ditandai selesai!`)
-  }
-
-  function handleCreate(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newDesc.trim()) return
-    const newT = {
-      id: `#TKT-2025-09${tickets.length + 1}`,
-      lab: `Lab ${newLab}`,
-      sub: 'Area Sentral',
-      desc: newDesc,
-      detail: 'Dilaporkan melalui Form Insiden Terpadu.',
-      reporter: 'Dosen Admin',
-      time: 'Baru saja',
-      priority: 'URGENT',
-      priorityTone: 'danger',
-      status: 'MENUNGGU TEKNISI',
-      statusTone: 'warning',
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading((prev) => prev)
+    try {
+      const [panelsRes, incidentsRes] = await Promise.all([
+        api.get<PanelOverview & { parameters?: Parameters }>('/panel-limits'),
+        api.get<Paginated<Incident>>('/incidents', { per_page: 100 }),
+      ])
+      setPanelOverview(panelsRes)
+      setIncidents(incidentsRes.data)
+      if (panelsRes.labs.length > 0) {
+        setNewLab((prev) => prev || String(panelsRes.labs[0].id))
+        setReadingLabId((prev) => prev || String(panelsRes.labs[0].id))
+      }
+      setError('')
+    } catch (caught) {
+      if (!silent) setError(firstError(caught))
+    } finally {
+      setLoading(false)
     }
-    setTickets([newT, ...tickets])
-    setCreateOpen(false)
-    setNewDesc('')
-    toast.success('Tiket insiden baru berhasil diterbitkan!')
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  useEffect(() => {
+    const pollSeconds = Math.max(panelOverview?.parameters?.incident_poll_seconds ?? 5, 2)
+    const timer = window.setInterval(() => void load(true), pollSeconds * 1000)
+    return () => window.clearInterval(timer)
+  }, [load, panelOverview?.parameters?.incident_poll_seconds])
+
+  const stats = useMemo(() => {
+    const labs = panelOverview?.labs ?? []
+    let totalWatt = 0
+    let highestWarning: PanelStatus | null = panelOverview?.warnings[0] ?? null
+    for (const lab of labs) {
+      for (const p of lab.panels) {
+        totalWatt += p.load_watt ?? 0
+        if ((p.status === 'WARNING' || p.status === 'OVER') && (!highestWarning || (p.percent ?? 0) > (highestWarning.percent ?? 0))) {
+          highestWarning = p
+        }
+      }
+    }
+    const baruCount = incidents.filter((i) => i.status === 'BARU').length
+    const ditanganiCount = incidents.filter((i) => i.status === 'DITANGANI').length
+    const selesaiCount = incidents.filter((i) => i.status === 'SELESAI').length
+
+    return {
+      totalKw: totalWatt / 1000,
+      totalAmpere: totalWatt / 220,
+      highestWarning,
+      baruCount,
+      ditanganiCount,
+      selesaiCount,
+      activeCount: baruCount + ditanganiCount,
+    }
+  }, [panelOverview, incidents])
+
+  async function handleAdvanceStatus(incident: Incident, target: 'DITANGANI' | 'SELESAI') {
+    setBusyId(incident.id)
+    try {
+      if (incident.status === 'BARU' && target === 'SELESAI') {
+        await api.patch(`/incidents/${incident.id}/status`, {
+          status: 'DITANGANI',
+          note: 'Ditangani oleh tim Facility Maintenance.',
+        })
+      }
+      await api.patch(`/incidents/${incident.id}/status`, {
+        status: target,
+        note: target === 'SELESAI' ? 'Insiden selesai ditangani dan terverifikasi aman.' : 'Sedang dalam pemeriksaan teknisi.',
+      })
+      await load(true)
+      toast.success(`Tiket ${ticketCode(incident)} diperbarui ke ${target}.`)
+    } catch (caught) {
+      toast.error(firstError(caught))
+    } finally {
+      setBusyId(null)
+    }
   }
 
-  const panels = [
-    {
-      code: 'GK1-301 • LT. 3',
-      name: 'Lab 1 – Pemrograman Dasar',
-      status: 'Aman',
-      statusTone: 'success',
-      voltage: '220.8 V | 50.02 Hz',
-      pcWatt: '1.316 W',
-      pcPercent: '59.8%',
-      pcAmp: '5.98A / 10.0A',
-      pcProgress: 59.8,
-      acWatt: '3.715 W',
-      acPercent: '42.2%',
-      acAmp: '16.88A / 40.0A',
-      acProgress: 42.2,
-      vampire: '142 W',
-      critical: false,
-    },
-    {
-      code: 'GK1-302 • LT. 3',
-      name: 'Lab 2 – Rekayasa Perangkat Lunak',
-      status: 'Aman',
-      statusTone: 'success',
-      voltage: '221.1 V | 49.98 Hz',
-      pcWatt: '1.507 W',
-      pcPercent: '68.5%',
-      pcAmp: '6.85A / 10.0A',
-      pcProgress: 68.5,
-      acWatt: '3.960 W',
-      acPercent: '45.0%',
-      acAmp: '18.0A / 40.0A',
-      acProgress: 45.0,
-      vampire: '188 W',
-      critical: false,
-    },
-    {
-      code: 'GK1-303 • LT. 3',
-      name: 'Lab 3 – Jaringan & Komputer Grafis',
-      status: 'OVERLOAD ALERT',
-      statusTone: 'danger',
-      voltage: '214.2 V (-5.8V Delta)',
-      pcWatt: '1.936 W',
-      pcPercent: '88.0%',
-      pcAmp: '8.80A / 10.0A',
-      pcProgress: 88.0,
-      acWatt: '3.988 W',
-      acPercent: '45.3%',
-      acAmp: '18.1A / 40.0A',
-      acProgress: 45.3,
-      vampire: '512 W (Bocor!)',
-      critical: true,
-      subWarning: 'Sisa toleransi MCB: hanya 1.20A (264 Watt) sebelum bimetal trip.',
-    },
-    {
-      code: 'GK1-304 • LT. 3',
-      name: 'Lab 4 – Kecerdasan Buatan (AI)',
-      status: 'Waspada',
-      statusTone: 'warning',
-      voltage: '218.4 V | 50.01 Hz',
-      pcWatt: '1.720 W',
-      pcPercent: '78.2%',
-      pcAmp: '7.82A / 10.0A',
-      pcProgress: 78.2,
-      acWatt: '4.206 W',
-      acPercent: '47.8%',
-      acAmp: '19.12A / 40.0A',
-      acProgress: 47.8,
-      vampire: '294 W',
-      critical: false,
-    },
-    {
-      code: 'GK1-305 • LT. 3',
-      name: 'Lab 5 – Sistem Informasi & Database',
-      status: 'Aman',
-      statusTone: 'success',
-      voltage: '220.6 V | 50.00 Hz',
-      pcWatt: '1.130 W',
-      pcPercent: '51.4%',
-      pcAmp: '5.14A / 10.0A',
-      pcProgress: 51.4,
-      acWatt: '3.608 W',
-      acPercent: '41.0%',
-      acAmp: '16.4A / 40.0A',
-      acProgress: 41.0,
-      vampire: '115 W',
-      critical: false,
-    },
-    {
-      code: 'GK1-306 • LT. 3',
-      name: 'Lab 6 – Riset IoT & Keamanan Siber',
-      status: 'Aman',
-      statusTone: 'success',
-      voltage: '220.2 V | 49.99 Hz',
-      pcWatt: '970 W',
-      pcPercent: '44.1%',
-      pcAmp: '4.41A / 10.0A',
-      pcProgress: 44.1,
-      acWatt: '3.476 W',
-      acPercent: '39.5%',
-      acAmp: '15.8A / 40.0A',
-      acProgress: 39.5,
-      vampire: '96 W',
-      critical: false,
-    },
-  ]
+  async function handleCreate(e: FormEvent) {
+    e.preventDefault()
+    if (!newDesc.trim() || !newLab) return
+    setCreating(true)
+    setCreateError('')
+    try {
+      await api.post('/incidents', {
+        lab_room_id: Number(newLab),
+        description: newDesc.trim(),
+      })
+      setCreateOpen(false)
+      setNewDesc('')
+      await load(true)
+      toast.success('Tiket insiden baru berhasil diterbitkan ke database!')
+    } catch (caught) {
+      setCreateError(firstError(caught))
+    } finally {
+      setCreating(false)
+    }
+  }
 
-  const filteredTickets = tickets.filter((t) => {
-    if (filter === 'URGENT') return t.priority === 'URGENT'
-    if (filter === 'WORKING') return t.status.includes('DIPERIKSA') || t.status.includes('MENUNGGU')
-    if (filter === 'RESOLVED') return t.status === 'SELESAI'
-    return true
+  function openReadingModal(labId: number, group: 'SOCKET' | 'AC', currentWatt: number | null) {
+    setReadingLabId(String(labId))
+    setReadingGroup(group)
+    setReadingWatt(currentWatt !== null ? String(currentWatt) : '')
+    setReadingNotes('')
+    setReadingError('')
+    setReadingOpen(true)
+  }
+
+  async function handleSubmitReading(e: FormEvent) {
+    e.preventDefault()
+    setSavingReading(true)
+    setReadingError('')
+    try {
+      await api.post('/panel-readings', {
+        lab_room_id: Number(readingLabId),
+        group_type: readingGroup,
+        load_watt: Number(readingWatt),
+        source: 'MANUAL_MEASUREMENT',
+        notes: readingNotes.trim() || null,
+      })
+      setReadingOpen(false)
+      await load(true)
+      toast.success('Pembacaan beban MCB berhasil disimpan!')
+    } catch (caught) {
+      setReadingError(firstError(caught))
+    } finally {
+      setSavingReading(false)
+    }
+  }
+
+  function handleExportCsv() {
+    const headers = ['ID Tiket', 'Lab', 'Deskripsi', 'Pelapor', 'Status', 'Waktu']
+    const rows = incidents.map((i) => [
+      ticketCode(i),
+      `"${i.lab_name ?? ''}"`,
+      `"${i.description.replace(/"/g, '""')}"`,
+      `"${i.reporter?.name ?? ''}"`,
+      i.status_label,
+      i.created_at,
+    ].join(','))
+    const blob = new Blob([[headers.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `rekap-insiden-vampir-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success('Rekap tiket insiden CSV berhasil diunduh.')
+  }
+
+  if (loading && !panelOverview) return <PageLoader label="Memuat panel MCB & tiket insiden..." />
+  if (error && !panelOverview) return <ErrorState message={error} onRetry={() => void load()} />
+
+  const filteredTickets = incidents.filter((item) => {
+    if (filter === 'ALL') return true
+    return item.status === filter
   })
 
   return (
     <>
-      {/* Red Emergency Alert Banner */}
-      {!silenced && (
+      {!silenced && stats.highestWarning && (
         <div className="emergency-banner">
           <div className="emergency-info">
             <div className="emergency-icon">
@@ -251,29 +216,30 @@ export default function PanelsPage() {
             </div>
             <div>
               <div className="emergency-title">EMERGENCY ALERT</div>
-              <div className="emergency-text">PERINGATAN TEGANGAN ABNORMAL &amp; BEBAN TINGGI KRITIS</div>
+              <div className="emergency-text">PERINGATAN BEBAN PANEL TINGGI ({stats.highestWarning.status_label.toUpperCase()})</div>
               <div className="emergency-sub">
-                Lab 3 Sektor Meja PC (GK1-303) mencapai 88.0% kapasitas MCB 10A (1.936 Watt / 2.200 Watt) pada tegangan
-                214.2V (Penurunan -5.8V dari grid standar 220V). Segera periksa distribusi beban stopkontak baris tengah.
+                {stats.highestWarning.lab_name} — {stats.highestWarning.group_label} mencapai{' '}
+                {number(stats.highestWarning.percent ?? 0, 1)}% kapasitas ({number(stats.highestWarning.load_watt ?? 0, 0)} W /{' '}
+                {number(stats.highestWarning.limit_watt, 0)} W). {stats.highestWarning.notes ?? 'Segera periksa distribusi beban meja.'}
               </div>
             </div>
           </div>
           <div className="emergency-actions">
-            <button className="btn btn-secondary btn-sm" onClick={() => setSilenced(true)}>
-              <VolumeX size={14} /> Bungkam Sirine (15m)
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSilenced(true)}>
+              <VolumeX size={14} /> Bungkam Banner
             </button>
             <button
+              type="button"
               className="btn btn-danger btn-sm"
               style={{ backgroundColor: '#ffffff', color: '#b91c1c', fontWeight: 700 }}
-              onClick={() => toast.success('Tim lapangan telah diberitahu untuk isolasi beban!')}
+              onClick={() => openReadingModal(stats.highestWarning!.lab_room_id, stats.highestWarning!.group_type, stats.highestWarning!.load_watt)}
             >
-              <Zap size={14} /> Kirim Tim Lapangan &amp; Isolasi Beban
+              <Zap size={14} /> Perbarui Pembacaan MCB
             </button>
           </div>
         </div>
       )}
 
-      {/* 4 Standard Stat Cards */}
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon stat-icon-blue">
@@ -281,8 +247,8 @@ export default function PanelsPage() {
           </div>
           <div className="stat-copy">
             <div className="stat-label">GRID STANDARD VOLTAGE</div>
-            <div className="stat-value">220.4 <span style={{ fontSize: '13px', color: '#64748b' }}>V RMS</span></div>
-            <div className="stat-meta" style={{ color: '#10b981' }}>● Fasa Tunggal Stabil</div>
+            <div className="stat-value">220.0 <span style={{ fontSize: '13px', color: '#64748b' }}>V RMS</span></div>
+            <div className="stat-meta" style={{ color: '#10b981' }}>● Referensi Fasa Tunggal</div>
           </div>
         </div>
 
@@ -291,9 +257,9 @@ export default function PanelsPage() {
             <Gauge size={20} />
           </div>
           <div className="stat-copy">
-            <div className="stat-label">TOTAL LOAD 6 LABORATORIUM</div>
-            <div className="stat-value">28.4 <span style={{ fontSize: '13px', color: '#64748b' }}>kW</span></div>
-            <div className="stat-meta">Total Ampere: 129.2 A</div>
+            <div className="stat-label">TOTAL LOAD {panelOverview?.summary.labs ?? 6} LABORATORIUM</div>
+            <div className="stat-value">{number(stats.totalKw, 1)} <span style={{ fontSize: '13px', color: '#64748b' }}>kW</span></div>
+            <div className="stat-meta">Estimasi Ampere: {number(stats.totalAmpere, 1)} A</div>
           </div>
         </div>
 
@@ -303,8 +269,13 @@ export default function PanelsPage() {
           </div>
           <div className="stat-copy">
             <div className="stat-label">MCB OVERLOAD WARNING</div>
-            <div className="stat-value" style={{ color: '#f87171' }}>1 <span style={{ fontSize: '13px', color: '#64748b' }}>/ 12 Breakers</span></div>
-            <div className="stat-meta">! GK1-303 (Lab 3) PC Group</div>
+            <div className="stat-value" style={{ color: '#f87171' }}>
+              {panelOverview?.summary.warnings ?? 0}{' '}
+              <span style={{ fontSize: '13px', color: '#64748b' }}>/ {panelOverview?.summary.panel_groups ?? 12} Breakers</span>
+            </div>
+            <div className="stat-meta">
+              {stats.highestWarning ? `! ${stats.highestWarning.lab_name}` : 'Semua grup dalam batas aman'}
+            </div>
           </div>
         </div>
 
@@ -314,162 +285,153 @@ export default function PanelsPage() {
           </div>
           <div className="stat-copy">
             <div className="stat-label">TIKET INSIDEN AKTIF</div>
-            <div className="stat-value">5 <span style={{ fontSize: '13px', color: '#64748b' }}>Tiket</span></div>
-            <div className="stat-meta" style={{ color: '#f59e0b' }}>2 Urgent Butuh Respon</div>
+            <div className="stat-value">{stats.activeCount} <span style={{ fontSize: '13px', color: '#64748b' }}>Tiket</span></div>
+            <div className="stat-meta" style={{ color: '#f59e0b' }}>{stats.baruCount} Baru · {stats.ditanganiCount} Ditangani</div>
           </div>
         </div>
       </div>
 
-      {/* Section: 6 Lab MCB Panels */}
       <section className="card" style={{ marginBottom: '22px' }}>
         <div className="card-head">
           <div>
             <div className="eyebrow" style={{ color: '#94a3b8' }}>
               PANEL MONITORING MCB &amp; SUB-DISTRIBUSI KAMPUS
             </div>
-            <h2 className="card-title">Monitoring 2 Jalur Utama per Lab: MCB 10A (Stopkontak/PC) &amp; MCB 40A (Heavy Load 4-Split AC)</h2>
+            <h2 className="card-title">Monitoring 2 Jalur Utama per Lab: MCB 10A (Stopkontak/PC) &amp; MCB 40A (AC Split)</h2>
           </div>
           <div style={{ display: 'flex', gap: '14px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
             <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span className="badge-dot" style={{ backgroundColor: '#10b981' }} /> Normal (&lt;75%)
+              <span className="badge-dot" style={{ backgroundColor: '#10b981' }} /> Normal (&lt;80%)
             </span>
             <span style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span className="badge-dot" style={{ backgroundColor: '#f59e0b' }} /> Waspada (75-89%)
+              <span className="badge-dot" style={{ backgroundColor: '#f59e0b' }} /> Waspada (80-100%)
             </span>
             <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span className="badge-dot" style={{ backgroundColor: '#ef4444' }} /> Kritis (≥90%)
+              <span className="badge-dot" style={{ backgroundColor: '#ef4444' }} /> Over (&gt;100%)
             </span>
           </div>
         </div>
 
         <div className="labs-grid">
-          {panels.map((p) => (
-            <div
-              key={p.code}
-              className={`lab-card ${p.critical ? 'critical' : ''}`}
-              style={{ backgroundColor: '#14161a' }}
-            >
-              <div className="lab-card-head">
-                <div>
-                  <div className="lab-code">{p.code}</div>
-                  <div className="lab-name" style={{ fontSize: '13.5px' }}>{p.name}</div>
-                </div>
-                <span className={`badge badge-${p.statusTone}`}>
-                  <span className="badge-dot" /> {p.status}
-                </span>
-              </div>
+          {(panelOverview?.labs ?? []).map((lab) => {
+            const socket = lab.panels.find((p) => p.group_type === 'SOCKET')
+            const ac = lab.panels.find((p) => p.group_type === 'AC')
+            const critical = socket?.status === 'WARNING' || socket?.status === 'OVER' || ac?.status === 'WARNING' || ac?.status === 'OVER'
+            const statusTone = socket?.status === 'OVER' || ac?.status === 'OVER' ? 'danger' : critical ? 'warning' : 'success'
+            const socketAmp = socket?.load_watt ? socket.load_watt / socket.voltage : 0
+            const acAmp = ac?.load_watt ? ac.load_watt / ac.voltage : 0
 
-              <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Zap size={12} color="#38bdf8" />
-                <span>Tegangan Fasa Tunggal:</span>
-                <strong className="mono" style={{ color: p.critical ? '#f87171' : '#ffffff' }}>
-                  {p.voltage}
-                </strong>
-              </div>
+            return (
+              <div
+                key={lab.id}
+                className={`lab-card ${critical ? 'critical' : ''}`}
+                style={{ backgroundColor: '#14161a' }}
+              >
+                <div className="lab-card-head">
+                  <div>
+                    <div className="lab-code">{lab.location ?? `GK1-30${lab.id}`}</div>
+                    <div className="lab-name" style={{ fontSize: '13.5px' }}>{lab.name}</div>
+                  </div>
+                  <span className={`badge badge-${statusTone}`}>
+                    <span className="badge-dot" /> {socket?.status === 'OVER' ? 'OVERLOAD' : critical ? 'Waspada' : 'Aman'}
+                  </span>
+                </div>
 
-              {/* MCB 10A */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
-                  <span style={{ color: p.critical ? '#f87171' : '#94a3b8', fontWeight: p.critical ? 700 : 500 }}>
-                    {p.critical ? '! ' : ''}Grup PC — MCB 10A (2.200W)
-                  </span>
-                  <span className="mono" style={{ color: p.critical ? '#f87171' : '#ffffff', fontWeight: 600 }}>
-                    {p.pcPercent}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: p.critical ? '#f87171' : '#ffffff' }}>
-                    {p.pcWatt}
-                  </span>
-                  <span className="mono" style={{ fontSize: '10.5px', color: '#64748b' }}>
-                    {p.pcAmp}
-                  </span>
-                </div>
-                <ProgressBar value={p.pcProgress} tone={p.statusTone as any} height={5} />
-                {p.subWarning && (
-                  <div style={{ fontSize: '10px', color: '#fca5a5', marginTop: '4px', lineHeight: 1.3 }}>
-                    {p.subWarning}
+                {socket && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
+                      <span style={{ color: critical ? '#f87171' : '#94a3b8', fontWeight: critical ? 700 : 500 }}>
+                        {socket.group_label} ({number(socket.limit_watt, 0)}W)
+                      </span>
+                      <span className="mono" style={{ color: critical ? '#f87171' : '#ffffff', fontWeight: 600 }}>
+                        {number(socket.percent ?? 0, 1)}%
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: critical ? '#f87171' : '#ffffff' }}>
+                        {number(socket.load_watt ?? 0, 0)} W
+                      </span>
+                      <span className="mono" style={{ fontSize: '10.5px', color: '#64748b' }}>
+                        {number(socketAmp, 2)}A / {number(socket.limit_ampere, 1)}A
+                      </span>
+                    </div>
+                    <ProgressBar value={socket.percent ?? 0} tone={statusTone} height={5} />
                   </div>
                 )}
-              </div>
 
-              {/* MCB 40A */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
-                  <span style={{ color: '#94a3b8' }}>Grup AC (4 Split) — MCB 40A</span>
-                  <span className="mono" style={{ color: '#ffffff', fontWeight: 600 }}>{p.acPercent}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
-                    {p.acWatt}
-                  </span>
-                  <span className="mono" style={{ fontSize: '10.5px', color: '#64748b' }}>
-                    {p.acAmp}
-                  </span>
-                </div>
-                <ProgressBar value={p.acProgress} tone="accent" height={5} />
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  borderTop: '1px solid #1e2126',
-                  paddingTop: '8px',
-                  fontSize: '11px',
-                }}
-              >
-                <span style={{ color: '#94a3b8' }}>
-                  Standby Vampire: <strong style={{ color: p.critical ? '#f87171' : '#4edea3' }}>{p.vampire}</strong>
-                </span>
-                {p.critical ? (
-                  <button
-                    className="btn btn-xs btn-danger"
-                    onClick={() => toast.info('Melakukan shedding load otomatis Lab 3...')}
-                  >
-                    Shed Load
-                  </button>
-                ) : (
-                  <span style={{ color: '#38bdf8', fontSize: '11px', cursor: 'pointer' }}>
-                    Diagnostik &gt;
-                  </span>
+                {ac && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
+                      <span style={{ color: '#94a3b8' }}>{ac.group_label} ({number(ac.limit_watt, 0)}W)</span>
+                      <span className="mono" style={{ color: '#ffffff', fontWeight: 600 }}>{number(ac.percent ?? 0, 1)}%</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                        {number(ac.load_watt ?? 0, 0)} W
+                      </span>
+                      <span className="mono" style={{ fontSize: '10.5px', color: '#64748b' }}>
+                        {number(acAmp, 2)}A / {number(ac.limit_ampere, 1)}A
+                      </span>
+                    </div>
+                    <ProgressBar value={ac.percent ?? 0} tone="accent" height={5} />
+                  </div>
                 )}
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderTop: '1px solid #1e2126',
+                    paddingTop: '8px',
+                    fontSize: '11px',
+                  }}
+                >
+                  <span style={{ color: '#94a3b8' }}>
+                    {socket?.recorded_at ? `Update ${relativeTime(socket.recorded_at)}` : 'Belum ada catatan'}
+                  </span>
+                  <button
+                    type="button"
+                    className={`btn btn-xs ${critical ? 'btn-danger' : 'btn-secondary'}`}
+                    onClick={() => openReadingModal(lab.id, 'SOCKET', socket?.load_watt ?? null)}
+                  >
+                    Catat Beban
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </section>
 
-      {/* Section: Live Incident Feed Table */}
       <section className="card">
         <div className="card-head">
           <div>
             <div className="eyebrow" style={{ color: '#94a3b8' }}>
               DAFTAR TIKET GANGGUAN LISTRIK &amp; ANOMALI PC
             </div>
-            <h2 className="card-title">Antrean perbaikan aktif tim Facility Maintenance UNKLAB untuk mencegah kebakaran &amp; pemborosan energi.</h2>
+            <h2 className="card-title">Antrean perbaikan aktif tim Facility Maintenance UNKLAB.</h2>
           </div>
 
           <div style={{ display: 'flex', gap: '8px' }}>
             <div className="tab-row">
-              <button className={`tab ${filter === 'ALL' ? 'active' : ''}`} onClick={() => setFilter('ALL')}>
-                Semua ({tickets.length})
+              <button type="button" className={`tab ${filter === 'ALL' ? 'active' : ''}`} onClick={() => setFilter('ALL')}>
+                Semua ({incidents.length})
               </button>
-              <button className={`tab ${filter === 'URGENT' ? 'active' : ''}`} onClick={() => setFilter('URGENT')}>
-                Urgent (2)
+              <button type="button" className={`tab ${filter === 'BARU' ? 'active' : ''}`} onClick={() => setFilter('BARU')}>
+                Baru ({stats.baruCount})
               </button>
-              <button className={`tab ${filter === 'WORKING' ? 'active' : ''}`} onClick={() => setFilter('WORKING')}>
-                Sedang Dikerjakan (3)
+              <button type="button" className={`tab ${filter === 'DITANGANI' ? 'active' : ''}`} onClick={() => setFilter('DITANGANI')}>
+                Ditangani ({stats.ditanganiCount})
               </button>
-              <button className={`tab ${filter === 'RESOLVED' ? 'active' : ''}`} onClick={() => setFilter('RESOLVED')}>
-                Selesai (1)
+              <button type="button" className={`tab ${filter === 'SELESAI' ? 'active' : ''}`} onClick={() => setFilter('SELESAI')}>
+                Selesai ({stats.selesaiCount})
               </button>
             </div>
           </div>
         </div>
 
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Daftar tiket insiden kelistrikan">
           <table className="data-table">
             <thead>
               <tr>
@@ -478,90 +440,118 @@ export default function PanelsPage() {
                 <th>JENIS GANGGUAN / ANOMALI</th>
                 <th>PELAPOR</th>
                 <th>WAKTU</th>
-                <th>PRIORITAS</th>
                 <th>STATUS</th>
                 <th style={{ textAlign: 'right' }}>TINDAKAN FACILITY</th>
               </tr>
             </thead>
             <tbody>
-              {filteredTickets.map((t) => (
-                <tr key={t.id}>
-                  <td className="cell-strong">{t.id}</td>
-                  <td>
-                    <div>
-                      <strong>{t.lab}</strong>
-                      <div className="cell-muted">{t.sub}</div>
-                    </div>
-                  </td>
-                  <td>
-                    <div style={{ maxWidth: '300px' }}>
-                      <strong style={{ color: '#ffffff' }}>{t.desc}</strong>
-                      <div className="cell-muted" style={{ fontSize: '11px' }}>{t.detail}</div>
-                    </div>
-                  </td>
-                  <td>{t.reporter}</td>
-                  <td className="cell-muted">{t.time}</td>
-                  <td>
-                    <span className={`badge badge-${t.priorityTone}`}>
-                      <span className="badge-dot" /> {t.priority}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`badge badge-${t.statusTone}`}>
-                      {t.status}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    {t.status !== 'SELESAI' ? (
-                      <button
-                        className="btn btn-xs btn-primary"
-                        onClick={() => handleComplete(t.id)}
-                      >
-                        <CheckCircle2 size={12} />
-                        Tandai Selesai
-                      </button>
-                    ) : (
-                      <span className="badge badge-success">✓ Terverifikasi</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {filteredTickets.map((t) => {
+                const statusTone = t.status === 'SELESAI' ? 'success' : t.status === 'DITANGANI' ? 'info' : 'danger'
+                return (
+                  <tr key={t.id}>
+                    <td className="cell-strong">{ticketCode(t)}</td>
+                    <td><strong>{t.lab_name ?? `Lab ${t.lab_room_id}`}</strong></td>
+                    <td>
+                      <div style={{ maxWidth: '340px' }}>
+                        <strong style={{ color: '#ffffff' }}>{t.description}</strong>
+                        {t.status_note && (
+                          <div className="cell-muted" style={{ fontSize: '11px' }}>Catatan: {t.status_note}</div>
+                        )}
+                      </div>
+                    </td>
+                    <td>{t.reporter?.name ?? 'Petugas'}</td>
+                    <td className="cell-muted">{relativeTime(t.created_at)}</td>
+                    <td>
+                      <span className={`badge badge-${statusTone}`}>
+                        <span className="badge-dot" /> {t.status_label}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {t.status === 'BARU' ? (
+                        <div style={{ display: 'inline-flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-secondary"
+                            disabled={busyId === t.id}
+                            onClick={() => void handleAdvanceStatus(t, 'DITANGANI')}
+                          >
+                            Tangani
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-primary"
+                            disabled={busyId === t.id}
+                            onClick={() => void handleAdvanceStatus(t, 'SELESAI')}
+                          >
+                            <CheckCircle2 size={12} />
+                            Selesai
+                          </button>
+                        </div>
+                      ) : t.status === 'DITANGANI' ? (
+                        <button
+                          type="button"
+                          className="btn btn-xs btn-primary"
+                          disabled={busyId === t.id}
+                          onClick={() => void handleAdvanceStatus(t, 'SELESAI')}
+                        >
+                          <CheckCircle2 size={12} />
+                          Tandai Selesai
+                        </button>
+                      ) : (
+                        <span className="badge badge-success">✓ Terverifikasi</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '14px' }}>
           <span className="cell-muted" style={{ fontSize: '11px' }}>
-            Menampilkan {filteredTickets.length} dari {tickets.length} laporan insiden kelistrikan semester ini
+            Menampilkan {filteredTickets.length} dari {incidents.length} laporan insiden kelistrikan
           </span>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-secondary btn-sm" onClick={() => toast.success('Mengunduh rekap CSV...')}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={handleExportCsv}>
               <Download size={14} /> Unduh Rekap Tiket (CSV)
             </button>
-            <button className="btn btn-primary btn-sm" onClick={() => setCreateOpen(true)}>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                setCreateError('')
+                setCreateOpen(true)
+              }}
+            >
               <Plus size={14} /> Buat Tiket Baru
             </button>
           </div>
         </div>
       </section>
 
-      {/* Modal Buat Tiket Baru */}
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Buat Tiket Insiden Listrik Baru">
-        <form onSubmit={handleCreate}>
+        <form onSubmit={handleCreate} className="form-stack">
           <div className="field">
-            <label>Laboratorium</label>
-            <select className="input" value={newLab} onChange={(e) => setNewLab(e.target.value)}>
-              <option value="1">Lab 1 Komputer Dasar</option>
-              <option value="2">Lab 2 Rekayasa Perangkat Lunak</option>
-              <option value="3">Lab 3 Jaringan &amp; Keamanan</option>
-              <option value="4">Lab 4 AI &amp; Data Science</option>
-              <option value="5">Lab 5 Multimedia &amp; Desain</option>
-              <option value="6">Lab 6 Riset &amp; Inovasi</option>
+            <label htmlFor="incidentLab">Laboratorium</label>
+            <select
+              id="incidentLab"
+              name="lab_room_id"
+              className="input"
+              value={newLab}
+              onChange={(e) => setNewLab(e.target.value)}
+              required
+            >
+              {(panelOverview?.labs ?? []).map((lab) => (
+                <option key={lab.id} value={lab.id}>{lab.name}</option>
+              ))}
             </select>
           </div>
           <div className="field">
-            <label>Deskripsi Gangguan / Anomali Listrik</label>
+            <label htmlFor="incidentDesc">Deskripsi Gangguan / Anomali Listrik</label>
             <textarea
+              id="incidentDesc"
+              name="description"
               className="input textarea"
               rows={3}
               placeholder="Contoh: Stopkontak nomor 12 berbau hangus, tegangan drop drastis..."
@@ -570,12 +560,81 @@ export default function PanelsPage() {
               required
             />
           </div>
+          {createError && <div className="inline-error" role="alert" aria-live="polite">{createError}</div>}
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
               Batal
             </button>
-            <button type="submit" className="btn btn-primary">
-              <Send size={14} /> Terbitkan Tiket
+            <button type="submit" className="btn btn-primary" disabled={creating}>
+              <Send size={14} /> {creating ? 'Mengirim...' : 'Terbitkan Tiket'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={readingOpen} onClose={() => setReadingOpen(false)} title="Catat Pembacaan Beban MCB">
+        <form onSubmit={handleSubmitReading} className="form-stack">
+          <div className="field">
+            <label htmlFor="readingLab">Laboratorium</label>
+            <select
+              id="readingLab"
+              name="lab_room_id"
+              className="input"
+              value={readingLabId}
+              onChange={(e) => setReadingLabId(e.target.value)}
+              required
+            >
+              {(panelOverview?.labs ?? []).map((lab) => (
+                <option key={lab.id} value={lab.id}>{lab.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="readingGroup">Grup MCB</label>
+            <select
+              id="readingGroup"
+              name="group_type"
+              className="input"
+              value={readingGroup}
+              onChange={(e) => setReadingGroup(e.target.value as 'SOCKET' | 'AC')}
+            >
+              <option value="SOCKET">Grup Stopkontak (MCB 10A)</option>
+              <option value="AC">Grup AC Ruangan (MCB 40A)</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="readingWatt">Beban Terukur (Watt)</label>
+            <input
+              id="readingWatt"
+              name="load_watt"
+              className="input"
+              type="number"
+              min="0"
+              max="100000"
+              step="1"
+              value={readingWatt}
+              onChange={(e) => setReadingWatt(e.target.value)}
+              required
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="readingNotes">Catatan (opsional)</label>
+            <textarea
+              id="readingNotes"
+              name="notes"
+              className="input textarea"
+              rows={2}
+              value={readingNotes}
+              onChange={(e) => setReadingNotes(e.target.value)}
+            />
+          </div>
+          {readingError && <div className="inline-error" role="alert" aria-live="polite">{readingError}</div>}
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => setReadingOpen(false)}>
+              Batal
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={savingReading}>
+              {savingReading ? 'Menyimpan...' : 'Simpan Pembacaan'}
             </button>
           </div>
         </form>

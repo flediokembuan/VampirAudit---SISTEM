@@ -131,6 +131,18 @@ code, .mono {
   font-family: var(--font-mono);
 }
 
+.visually-hidden {
+  position: absolute;
+  clip-path: inset(50%);
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  white-space: nowrap;
+}
+
 /* ==========================================================================
    GLOBAL APP SHELL & TOPBAR
    ========================================================================== */
@@ -1799,9 +1811,26 @@ select.input {
   border: 1px solid #333842;
   border-radius: var(--radius-xl);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
+  color: var(--text-primary);
+  padding: 0;
+  margin: auto;
+  overflow: hidden;
+}
+
+dialog.modal[open] {
   display: flex;
   flex-direction: column;
+}
+
+dialog.modal:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.modal::backdrop {
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .modal.modal-wide {
@@ -1834,12 +1863,41 @@ select.input {
   max-height: 75vh;
 }
 
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  background-color: #14161a;
+}
+
 .modal-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
   margin-top: 20px;
+}
+
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inline-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background-color: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: #fca5a5;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 /* Spin animation */

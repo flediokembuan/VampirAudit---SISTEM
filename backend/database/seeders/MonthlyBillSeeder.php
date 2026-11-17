@@ -10,28 +10,24 @@ class MonthlyBillSeeder extends Seeder
 {
     public function run(): void
     {
-        $admin = User::query()->where('email', 'admin@unklab.ac.id')->firstOrFail();
+        $admin = User::query()->where('email', 'dosen.admin@unklab.ac.id')->firstOrFail();
 
         $bills = [
-            1 => 62400000,
-            2 => 64100000,
-            3 => 63800000,
-            4 => 66500000,
-            5 => 65200000,
-            6 => 67800000,
-            7 => 66900000,
-            8 => 69400000,
-            9 => 68700000,
-            10 => 71200000,
+            5 => ['amount' => 64200000, 'emission' => 34650, 'notes' => null],
+            6 => ['amount' => 67800000, 'emission' => 36590, 'notes' => null],
+            7 => ['amount' => 61500000, 'emission' => 33190, 'notes' => 'Libur semester genap'],
+            8 => ['amount' => 69300000, 'emission' => 37400, 'notes' => 'Awal semester ganjil'],
+            9 => ['amount' => 72100000, 'emission' => 38910, 'notes' => 'Beban puncak perkuliahan'],
+            10 => ['amount' => 68450000, 'emission' => 36940, 'notes' => null],
         ];
 
-        foreach ($bills as $month => $amount) {
+        foreach ($bills as $month => $row) {
             MonthlyElectricityBill::query()->updateOrCreate(
                 ['period_year' => 2026, 'period_month' => $month],
                 [
-                    'total_amount' => $amount,
-                    'carbon_emission_kg' => $month === 9 ? 52500 : null,
-                    'notes' => $month === 9 ? 'Nilai emisi pada tagihan diisi manual oleh admin.' : null,
+                    'total_amount' => $row['amount'],
+                    'carbon_emission_kg' => $row['emission'],
+                    'notes' => $row['notes'],
                     'created_by' => $admin->id,
                 ]
             );

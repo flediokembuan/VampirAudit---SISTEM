@@ -1,5 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { AlertCircle, LoaderCircle, X } from 'lucide-react'
 
 type BadgeTone = 'success' | 'warning' | 'danger' | 'neutral' | 'info' | 'accent'
@@ -80,39 +79,86 @@ export function Modal({
   footer?: ReactNode
   wide?: boolean
 }) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+
   useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (open) {
+      if (!dialog.open) dialog.showModal()
+    } else if (dialog.open) {
+      dialog.close()
     }
-    document.addEventListener('keydown', onKey)
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+  }, [open])
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    const handleClose = () => {
+      if (open) onClose()
+    }
+    dialog.addEventListener('close', handleClose)
+
+    // Fallback for browsers without <dialog closedby="any">
+    let cleanupFallback: (() => void) | undefined
+    if (!('closedBy' in HTMLDialogElement.prototype)) {
+      let pressedOutside = false
+      const isOutside = (event: PointerEvent) => {
+        const rect = dialog.getBoundingClientRect()
+        return (
+          event.clientX < rect.left ||
+          event.clientX > rect.right ||
+          event.clientY < rect.top ||
+          event.clientY > rect.bottom
+        )
+      }
+      const onPointerDown = (event: PointerEvent) => {
+        pressedOutside = isOutside(event)
+      }
+      const onPointerUp = (event: PointerEvent) => {
+        if (pressedOutside && isOutside(event)) {
+          dialog.close()
+        }
+        pressedOutside = false
+      }
+      dialog.addEventListener('pointerdown', onPointerDown)
+      dialog.addEventListener('pointerup', onPointerUp)
+      cleanupFallback = () => {
+        dialog.removeEventListener('pointerdown', onPointerDown)
+        dialog.removeEventListener('pointerup', onPointerUp)
+      }
+    }
+
     return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = previous
+      dialog.removeEventListener('close', handleClose)
+      cleanupFallback?.()
     }
   }, [open, onClose])
 
-  if (!open) return null
-
-  return createPortal(
-    <div className="modal-overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
-        <header className="modal-head">
-          <div>
-            <h2>{title}</h2>
-            {subtitle && <p>{subtitle}</p>}
-          </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Tutup dialog">
-            <X size={17} />
-          </button>
-        </header>
-        <div className="modal-body">{children}</div>
-        {footer && <footer className="modal-foot">{footer}</footer>}
-      </div>
-    </div>,
-    document.body,
+  return (
+    <dialog
+      ref={dialogRef}
+      className={`modal ${wide ? 'modal-wide' : ''}`}
+      aria-labelledby={titleId}
+      {...({ closedby: 'any' } as Record<string, string>)}
+    >
+      {open && (
+        <>
+          <header className="modal-head">
+            <div>
+              <h2 id={titleId} className="modal-title">{title}</h2>
+              {subtitle && <p className="modal-sub">{subtitle}</p>}
+            </div>
+            <button type="button" className="icon-btn" onClick={onClose} aria-label="Tutup dialog">
+              <X size={17} />
+            </button>
+          </header>
+          <div className="modal-body">{children}</div>
+          {footer && <footer className="modal-foot">{footer}</footer>}
+        </>
+      )}
+    </dialog>
   )
 }
 

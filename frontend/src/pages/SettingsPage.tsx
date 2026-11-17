@@ -220,7 +220,7 @@ export default function SettingsPage() {
         description="Atur asumsi energi standby, tarif, faktor emisi, dan interval operasional yang dipakai seluruh perhitungan."
         actions={
           <>
-            <button className="btn btn-secondary" onClick={() => void load()} disabled={refreshing}>
+            <button type="button" className="btn btn-secondary" onClick={() => void load()} disabled={refreshing}>
               <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
               Perbarui
             </button>
@@ -442,7 +442,7 @@ export default function SettingsPage() {
           </section>
 
           <div className="settings-actions">
-            {formError && <div className="inline-error">{formError}</div>}
+            {formError && <div className="inline-error" role="alert" aria-live="polite">{formError}</div>}
             <div className="settings-actions-row">
               <button className="btn btn-ghost" type="button" onClick={reset} disabled={!dirty || saving}>
                 <RotateCcw size={15} />
@@ -636,7 +636,7 @@ export default function SettingsPage() {
         ) : history.length === 0 ? (
           <div className="empty-inline">Belum ada perubahan parameter yang tercatat.</div>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Riwayat perubahan parameter">
             <table className="data-table">
               <thead>
                 <tr>

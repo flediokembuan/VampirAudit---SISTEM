@@ -22,17 +22,22 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/dashboard', [DashboardController::class, 'index']);
     Route::get('/labs', [LabRoomController::class, 'index']);
+    Route::get('/specs', [MasterPcSpecController::class, 'index']);
+    Route::get('/panel-limits', [PanelLimitController::class, 'index']);
     Route::get('/settings', [SettingController::class, 'index']);
 
     Route::middleware('role:ADMIN,AUDITOR')->group(function () {
-        Route::get('/specs', [MasterPcSpecController::class, 'index']);
         Route::get('/audits', [AuditPcLogController::class, 'index']);
         Route::get('/audits/progress', [AuditPcLogController::class, 'progress']);
         Route::post('/audits', [AuditPcLogController::class, 'store']);
+        Route::patch('/audits/{audit_pc_log}', [AuditPcLogController::class, 'update']);
+    });
+
+    Route::middleware('role:ADMIN,AUDITOR,MAINTENANCE')->group(function () {
+        Route::post('/incidents', [UrgentIncidentController::class, 'store']);
     });
 
     Route::middleware('role:ADMIN,MAINTENANCE')->group(function () {
-        Route::get('/panel-limits', [PanelLimitController::class, 'index']);
         Route::get('/panel-readings', [PanelReadingController::class, 'index']);
         Route::post('/panel-readings', [PanelReadingController::class, 'store']);
         Route::get('/incidents', [UrgentIncidentController::class, 'index']);
@@ -61,8 +66,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::patch('/panel-limits/{panel_limit}', [PanelLimitController::class, 'update']);
 
-        Route::post('/incidents', [UrgentIncidentController::class, 'store']);
-
         Route::post('/bills', [MonthlyElectricityBillController::class, 'store']);
         Route::patch('/bills/{bill}', [MonthlyElectricityBillController::class, 'update']);
         Route::delete('/bills/{bill}', [MonthlyElectricityBillController::class, 'destroy']);
@@ -70,7 +73,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/settings', [SettingController::class, 'update']);
         Route::get('/settings/history', [SettingController::class, 'history']);
 
-        Route::patch('/audits/{audit_pc_log}', [AuditPcLogController::class, 'update']);
         Route::delete('/audits/{audit_pc_log}', [AuditPcLogController::class, 'destroy']);
     });
 });

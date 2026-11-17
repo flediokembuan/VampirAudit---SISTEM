@@ -1,127 +1,229 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  AlertTriangle,
-  ArrowRight,
-  Check,
-  CheckCircle2,
-  ChevronDown,
   Download,
-  Edit2,
-  Eye,
-  Filter,
-  HardDrive,
   Layers,
   Monitor,
-  MoreVertical,
   Pencil,
   Plus,
   RefreshCw,
-  Server,
   ShieldCheck,
   Trash2,
   Users,
-  Zap,
 } from 'lucide-react'
 import { api, firstError } from '../lib/api'
-import { Badge, Modal } from '../components/ui'
+import { number, relativeTime } from '../lib/format'
+import { ErrorState, Modal, PageLoader } from '../components/ui'
 import { useToast } from '../components/ToastProvider'
+import type { AppUser, AuditLog, LabRoom, Paginated, Role, Spec } from '../types'
+
+const PAGE_SIZE = 10
 
 export default function SpecsPage() {
   const toast = useToast()
   const [activeTab, setActiveTab] = useState<'INVENTORY' | 'LABS' | 'RBAC'>('INVENTORY')
   const [selectedLab, setSelectedLab] = useState('ALL')
   const [selectedCondition, setSelectedCondition] = useState('ALL')
-  const [createOpen, setCreateOpen] = useState(false)
+  const [page, setPage] = useState(1)
 
-  const [inventory, setInventory] = useState([
-    {
-      code: 'LAB1-PC01',
-      lab: 'Lab 1 Komputer Dasar',
-      sub: 'MCB-B01 / IP: 10.12.1.11',
-      spec: 'Core i5-12400 • 16GB • 512GB',
-      power: '145W Aktif / 3.8W Standby',
-      status: 'Normal',
-      statusTone: 'success',
-      audited: 'Hari ini, 09:15',
-      auditor: 'Auditor: Mario K.',
-    },
-    {
-      code: 'LAB1-PC08',
-      lab: 'Lab 1 Komputer Dasar',
-      sub: 'MCB-B01 / IP: 10.12.1.18',
-      spec: 'Core i5-12400 • 16GB • 512GB',
-      power: '152W Aktif / 6.9W Standby',
-      status: 'Standby Boros',
-      statusTone: 'warning',
-      audited: 'Kemarin, 17:30',
-      auditor: 'Auditor: Mario K.',
-    },
-    {
-      code: 'LAB2-PC15',
-      lab: 'Lab 2 Rekayasa Perangkat Lunak',
-      sub: 'MCB-B03 / IP: 10.12.2.25',
-      spec: 'Ryzen 7 5700X • 32GB • 1TB NVMe',
-      power: '190W Aktif / 4.2W Standby',
-      status: 'Normal',
-      statusTone: 'success',
-      audited: '21 Okt, 14:10',
-      auditor: 'Auditor: Sarah T.',
-    },
-    {
-      code: 'LAB3-PC29',
-      lab: 'Lab 3 Jaringan & Keamanan',
-      sub: 'MCB-B06 / IP: 10.12.3.39',
-      spec: 'Core i7-11700 • 32GB Dual NIC',
-      power: 'ERR (0.0W Aktif) / 14.2W Standby',
-      status: 'Anomali PSU',
-      statusTone: 'danger',
-      audited: '20 Okt, 11:05',
-      auditor: 'Auditor: Juan W.',
-    },
-    {
-      code: 'LAB5-PC02',
-      lab: 'Lab 5 AI & Data Science',
-      sub: 'MCB-B09 / IP: 10.12.5.12',
-      spec: 'RTX 4070 • i7-13700KF • 64GB',
-      power: '310W Aktif / 4.5W Standby',
-      status: 'Normal',
-      statusTone: 'success',
-      audited: 'Hari ini, 08:30',
-      auditor: 'Auditor: Sarah T.',
-    },
-    {
-      code: 'LAB4-PC19',
-      lab: 'Lab 4 Multimedia & Desain',
-      sub: 'MCB-B07 / IP: 10.12.4.29',
-      spec: 'Apple M2 Mac Mini • 16GB',
-      power: '65W Aktif / 1.8W Standby',
-      status: 'Normal',
-      statusTone: 'success',
-      audited: '19 Okt, 16:40',
-      auditor: 'Auditor: Juan W.',
-    },
-    {
-      code: 'LAB6-PC33',
-      lab: 'Lab 6 Pemrograman Web',
-      sub: 'MCB-B12 / IP: 10.12.6.43',
-      spec: 'Core i5-11400 • 16GB • 256GB SSD',
-      power: '138W Aktif / 3.9W Standby',
-      status: 'Normal',
-      statusTone: 'success',
-      audited: '18 Okt, 10:20',
-      auditor: 'Auditor: Mario K.',
-    },
-  ])
+  const [audits, setAudits] = useState<AuditLog[]>([])
+  const [specs, setSpecs] = useState<Spec[]>([])
+  const [labs, setLabs] = useState<LabRoom[]>([])
+  const [users, setUsers] = useState<AppUser[]>([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState('')
 
-  function handleDelete(code: string) {
-    setInventory((prev) => prev.filter((item) => item.code !== code))
-    toast.success(`Unit ${code} telah dinonaktifkan dari inventaris.`)
+  const [auditModalOpen, setAuditModalOpen] = useState(false)
+  const [editingAudit, setEditingAudit] = useState<AuditLog | null>(null)
+  const [formLabId, setFormLabId] = useState('')
+  const [formPcNumber, setFormPcNumber] = useState('')
+  const [formSpecId, setFormSpecId] = useState('')
+  const [formFaulty, setFormFaulty] = useState(false)
+  const [formFaultNote, setFormFaultNote] = useState('')
+  const [savingAudit, setSavingAudit] = useState(false)
+  const [auditError, setAuditError] = useState('')
+
+  const [specModalOpen, setSpecModalOpen] = useState(false)
+  const [specRam, setSpecRam] = useState('16')
+  const [specStorage, setSpecStorage] = useState('512')
+  const [specStorageType, setSpecStorageType] = useState<'SSD' | 'HDD' | 'NVME'>('SSD')
+  const [specCpu, setSpecCpu] = useState('')
+  const [specWatt, setSpecWatt] = useState('4.5')
+  const [savingSpec, setSavingSpec] = useState(false)
+  const [specError, setSpecError] = useState('')
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setRefreshing(true)
+    try {
+      const [auditsRes, specsRes, labsRes, usersRes] = await Promise.all([
+        api.get<Paginated<AuditLog>>('/audits', { per_page: 100 }),
+        api.get<{ data: Spec[] }>('/specs', { include_inactive: 1 }),
+        api.get<{ data: LabRoom[] }>('/labs', { include_inactive: 1 }),
+        api.get<Paginated<AppUser>>('/users'),
+      ])
+      setAudits(auditsRes.data)
+      setSpecs(specsRes.data)
+      setLabs(labsRes.data)
+      setUsers(usersRes.data)
+      if (labsRes.data.length > 0) setFormLabId((prev) => prev || String(labsRes.data[0].id))
+      if (specsRes.data.length > 0) setFormSpecId((prev) => prev || String(specsRes.data[0].id))
+      setError('')
+    } catch (caught) {
+      setError(firstError(caught))
+    } finally {
+      setRefreshing(false)
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const filteredAudits = useMemo(() => {
+    return audits.filter((row) => {
+      if (selectedLab !== 'ALL' && String(row.lab_room_id) !== selectedLab) return false
+      if (selectedCondition === 'FAULTY' && !row.is_faulty) return false
+      if (selectedCondition === 'STANDBY' && (row.is_faulty || row.spec.standby_watt <= 5)) return false
+      if (selectedCondition === 'NORMAL' && (row.is_faulty || row.spec.standby_watt > 5 || row.spec.standby_watt === 0)) return false
+      if (selectedCondition === 'OFF' && (row.is_faulty || row.spec.standby_watt !== 0)) return false
+      return true
+    })
+  }, [audits, selectedLab, selectedCondition])
+
+  const totalPages = Math.max(Math.ceil(filteredAudits.length / PAGE_SIZE), 1)
+  const safePage = Math.min(page, totalPages)
+  const paginatedAudits = filteredAudits.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  const roleCounts = useMemo(() => {
+    const counts: Record<Role, number> = { ADMIN: 0, AUDITOR: 0, MAINTENANCE: 0, PIMPINAN: 0 }
+    for (const u of users) {
+      if (u.is_active) counts[u.role] += 1
+    }
+    return counts
+  }, [users])
+
+  const highStandbyCount = useMemo(
+    () => audits.filter((a) => a.spec.standby_watt > 5 || a.is_faulty).length,
+    [audits],
+  )
+
+  function openCreateAudit() {
+    setEditingAudit(null)
+    setFormLabId(labs[0] ? String(labs[0].id) : '')
+    setFormPcNumber('')
+    setFormSpecId(specs[0] ? String(specs[0].id) : '')
+    setFormFaulty(false)
+    setFormFaultNote('')
+    setAuditError('')
+    setAuditModalOpen(true)
   }
+
+  function openEditAudit(audit: AuditLog) {
+    setEditingAudit(audit)
+    setFormLabId(String(audit.lab_room_id))
+    setFormPcNumber(audit.pc_number)
+    setFormSpecId(String(audit.master_pc_spec_id))
+    setFormFaulty(audit.is_faulty)
+    setFormFaultNote(audit.fault_note ?? '')
+    setAuditError('')
+    setAuditModalOpen(true)
+  }
+
+  async function handleSaveAudit(event: FormEvent) {
+    event.preventDefault()
+    setSavingAudit(true)
+    setAuditError('')
+    try {
+      if (editingAudit) {
+        await api.patch(`/audits/${editingAudit.id}`, {
+          pc_number: formPcNumber.trim(),
+          master_pc_spec_id: Number(formSpecId),
+          is_faulty: formFaulty,
+          fault_note: formFaulty ? formFaultNote.trim() || null : null,
+        })
+        toast.success(`Data unit ${formPcNumber.trim()} diperbarui.`)
+      } else {
+        await api.post('/audits', {
+          lab_room_id: Number(formLabId),
+          pc_number: formPcNumber.trim(),
+          master_pc_spec_id: Number(formSpecId),
+          is_faulty: formFaulty,
+          fault_note: formFaulty ? formFaultNote.trim() || null : null,
+        })
+        toast.success(`Unit ${formPcNumber.trim()} berhasil ditambahkan!`)
+      }
+      setAuditModalOpen(false)
+      await load(true)
+    } catch (caught) {
+      setAuditError(firstError(caught))
+    } finally {
+      setSavingAudit(false)
+    }
+  }
+
+  async function handleDeleteAudit(audit: AuditLog) {
+    if (!window.confirm(`Hapus catatan audit ${audit.pc_number} (${audit.lab_name ?? 'Lab'})?`)) return
+    try {
+      await api.delete(`/audits/${audit.id}`)
+      toast.success(`Unit ${audit.pc_number} telah dihapus dari inventaris audit.`)
+      await load(true)
+    } catch (caught) {
+      toast.error(firstError(caught))
+    }
+  }
+
+  async function handleCreateSpec(event: FormEvent) {
+    event.preventDefault()
+    setSavingSpec(true)
+    setSpecError('')
+    try {
+      await api.post('/specs', {
+        ram_gb: Number(specRam),
+        storage_gb: Number(specStorage),
+        storage_type: specStorageType,
+        cpu: specCpu.trim() || null,
+        standby_watt: Number(specWatt),
+        is_active: true,
+      })
+      setSpecModalOpen(false)
+      setSpecCpu('')
+      toast.success('Spesifikasi hardware master berhasil ditambahkan!')
+      await load(true)
+    } catch (caught) {
+      setSpecError(firstError(caught))
+    } finally {
+      setSavingSpec(false)
+    }
+  }
+
+  function handleExportCsv() {
+    const headers = ['Kode PC', 'Lab', 'Spesifikasi', 'Standby (W)', 'Status', 'Auditor', 'Waktu Audit']
+    const rows = filteredAudits.map((row) => [
+      row.pc_number,
+      `"${row.lab_name ?? ''}"`,
+      `"${row.spec.label}"`,
+      row.spec.standby_watt,
+      row.is_faulty ? 'Anomali' : row.spec.standby_watt === 0 ? 'Mati (0W)' : row.spec.standby_watt > 5 ? 'Standby Boros' : 'Normal',
+      `"${row.auditor?.name ?? ''}"`,
+      row.audited_at,
+    ].join(','))
+    const blob = new Blob([[headers.join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `inventaris-pc-vampir-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success('Data inventaris CSV berhasil diunduh.')
+  }
+
+  if (loading && audits.length === 0) return <PageLoader label="Memuat master data & inventaris PC..." />
+  if (error && audits.length === 0) return <ErrorState message={error} onRetry={() => void load()} />
 
   return (
     <>
-      {/* Header Info matching Screen 6 */}
       <div className="page-head">
         <div>
           <div className="eyebrow" style={{ color: '#94a3b8' }}>
@@ -134,96 +236,119 @@ export default function SpecsPage() {
             </span>
           </div>
           <p>
-            Kelola 240 unit PC inventaris laboratorium, parameter batas MCB cerdas, dan otorisasi matriks 4
-            peran pengguna Fakultas Ilmu Komputer.
+            Kelola {audits.length} unit PC teraudit di {labs.length} laboratorium, master spesifikasi daya standby, dan {users.length} akun RBAC.
           </p>
         </div>
 
         <div className="head-actions-row">
           <div style={{ display: 'flex', gap: '8px' }}>
             <span className="badge badge-success" style={{ padding: '6px 12px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
-              TOTAL UNITS: <strong style={{ color: '#ffffff', marginLeft: '4px' }}>● 240 ONLINE</strong>
+              AUDITED UNITS: <strong style={{ color: '#ffffff', marginLeft: '4px' }}>● {audits.length} RECORDS</strong>
             </span>
             <span className="badge badge-warning" style={{ padding: '6px 12px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
-              VAMPIRE ALERTS: <strong style={{ color: '#ffffff', marginLeft: '4px' }}>△ 14 &gt;5.0W</strong>
+              HIGH / FAULTY: <strong style={{ color: '#ffffff', marginLeft: '4px' }}>△ {highStandbyCount}</strong>
             </span>
           </div>
         </div>
       </div>
 
-      {/* 3 Top Tabs */}
       <div style={{ display: 'flex', gap: '6px', borderBottom: '1px solid #26292e', marginBottom: '18px' }}>
         <button
+          type="button"
           className={`subnav-link ${activeTab === 'INVENTORY' ? 'active' : ''}`}
           onClick={() => setActiveTab('INVENTORY')}
         >
           <Monitor size={15} />
-          <span>Master Inventaris 240 PC</span>
-          <span className="subnav-badge">240</span>
+          <span>Master Inventaris PC</span>
+          <span className="subnav-badge">{audits.length}</span>
         </button>
 
         <button
+          type="button"
           className={`subnav-link ${activeTab === 'LABS' ? 'active' : ''}`}
           onClick={() => setActiveTab('LABS')}
         >
           <Layers size={15} />
-          <span>Konfigurasi 6 Lab &amp; MCB</span>
-          <span className="subnav-badge">6 Labs</span>
+          <span>Konfigurasi {labs.length} Lab &amp; Master Spec</span>
+          <span className="subnav-badge">{specs.length} Spec</span>
         </button>
 
         <button
+          type="button"
           className={`subnav-link ${activeTab === 'RBAC' ? 'active' : ''}`}
           onClick={() => setActiveTab('RBAC')}
         >
           <Users size={15} />
           <span>Akun Pengguna &amp; Hak Akses RBAC</span>
-          <span className="subnav-badge">15 Users</span>
+          <span className="subnav-badge">{users.length} Users</span>
         </button>
       </div>
 
-      {/* Toolbar Filters */}
       <div className="toolbar" style={{ justifyContent: 'flex-end' }}>
         <div className="toolbar-filters">
-          <select
-            className="input input-sm"
-            value={selectedLab}
-            onChange={(e) => setSelectedLab(e.target.value)}
-            style={{ width: 'auto' }}
-          >
-            <option value="ALL">Semua Laboratorium (6)</option>
-            <option value="Lab 1">Lab 1 Komputer Dasar</option>
-            <option value="Lab 2">Lab 2 RPL</option>
-            <option value="Lab 3">Lab 3 Jaringan &amp; Keamanan</option>
-            <option value="Lab 4">Lab 4 Multimedia</option>
-            <option value="Lab 5">Lab 5 AI &amp; Data Science</option>
-            <option value="Lab 6">Lab 6 Pemrograman Web</option>
-          </select>
+          {activeTab === 'INVENTORY' && (
+            <>
+              <label htmlFor="specsLabFilter" className="visually-hidden">Filter Laboratorium</label>
+              <select
+                id="specsLabFilter"
+                className="input input-sm"
+                value={selectedLab}
+                onChange={(e) => {
+                  setSelectedLab(e.target.value)
+                  setPage(1)
+                }}
+                style={{ width: 'auto' }}
+              >
+                <option value="ALL">Semua Laboratorium ({labs.length})</option>
+                {labs.map((lab) => (
+                  <option key={lab.id} value={String(lab.id)}>{lab.name}</option>
+                ))}
+              </select>
 
-          <select
-            className="input input-sm"
-            value={selectedCondition}
-            onChange={(e) => setSelectedCondition(e.target.value)}
-            style={{ width: 'auto' }}
-          >
-            <option value="ALL">Semua Kondisi (240)</option>
-            <option value="Normal">Normal</option>
-            <option value="Standby Boros">Standby Boros</option>
-            <option value="Anomali PSU">Anomali PSU</option>
-          </select>
+              <label htmlFor="specsCondFilter" className="visually-hidden">Filter Kondisi</label>
+              <select
+                id="specsCondFilter"
+                className="input input-sm"
+                value={selectedCondition}
+                onChange={(e) => {
+                  setSelectedCondition(e.target.value)
+                  setPage(1)
+                }}
+                style={{ width: 'auto' }}
+              >
+                <option value="ALL">Semua Kondisi ({audits.length})</option>
+                <option value="OFF">Mati Total (0W)</option>
+                <option value="NORMAL">Normal (&le;5W)</option>
+                <option value="STANDBY">Standby Boros (&gt;5W)</option>
+                <option value="FAULTY">Anomali / Bermasalah</option>
+              </select>
 
-          <button className="btn btn-sm btn-secondary" onClick={() => toast.success('Mengekspor data CSV...')}>
-            <Download size={13} /> Ekspor CSV/Excel
-          </button>
+              <button type="button" className="btn btn-sm btn-secondary" onClick={handleExportCsv}>
+                <Download size={13} /> Ekspor CSV
+              </button>
 
-          <button className="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>
-            <Plus size={13} /> Tambah Data Baru
-          </button>
+              <button type="button" className="btn btn-sm btn-primary" onClick={openCreateAudit}>
+                <Plus size={13} /> Tambah Audit PC
+              </button>
+            </>
+          )}
+
+          {activeTab === 'LABS' && (
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={() => {
+                setSpecError('')
+                setSpecModalOpen(true)
+              }}
+            >
+              <Plus size={13} /> Tambah Master Spec
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Two-Column Grid: 2/3 Table + 1/3 Right Sidebar Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.9fr 1.1fr', gap: '20px' }}>
-        {/* Left Table Section */}
         <div className="card" style={{ padding: '16px' }}>
           <div
             style={{
@@ -236,186 +361,226 @@ export default function SpecsPage() {
             }}
           >
             <div>
-              <span className="mono" style={{ color: '#10b981', fontWeight: 700 }}>240 Records</span>
+              <span className="mono" style={{ color: '#10b981', fontWeight: 700 }}>
+                {activeTab === 'INVENTORY' ? `${filteredAudits.length} Records` : activeTab === 'LABS' ? `${specs.length} Spesifikasi` : `${users.length} Pengguna`}
+              </span>
               <span style={{ margin: '0 8px' }}>•</span>
-              <span>Sinkronisasi telemetry MCB aktif: 32 detik yang lalu</span>
+              <span>Terhubung langsung dengan database</span>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                style={{ color: '#38bdf8', fontSize: '11px', background: 'none' }}
-                onClick={() => toast.info('Memuat ulang data telemetri...')}
-              >
-                ↺ Muat Ulang
-              </button>
-              <span>•</span>
-              <button
-                style={{ color: '#94a3b8', fontSize: '11px', background: 'none' }}
-                onClick={() => toast.info('Kolom kustom')}
-              >
-                Kolom Kustom
-              </button>
-            </div>
+            <button
+              type="button"
+              style={{ color: '#38bdf8', fontSize: '11px', background: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              onClick={() => void load()}
+              disabled={refreshing}
+            >
+              <RefreshCw size={12} className={refreshing ? 'spin' : ''} /> Muat Ulang
+            </button>
           </div>
 
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '30px' }}>
-                    <input type="checkbox" style={{ accentColor: '#10b981' }} />
-                  </th>
-                  <th>KODE PC</th>
-                  <th>RUANG LABORATORIUM</th>
-                  <th>SPESIFIKASI HARDWARE</th>
-                  <th>PROFIL KALIBRASI DAYA</th>
-                  <th>STATUS KONDISI</th>
-                  <th>TERAKHIR DIVERIFIKASI</th>
-                  <th style={{ textAlign: 'right' }}>AKSI</th>
-                </tr>
-              </thead>
-              <tbody>
-                {inventory.map((row) => (
-                  <tr key={row.code}>
-                    <td>
-                      <input type="checkbox" style={{ accentColor: '#10b981' }} />
-                    </td>
-                    <td className="cell-strong" style={{ color: '#ffffff' }}>
-                      {row.code}
-                    </td>
-                    <td>
-                      <div>
-                        <strong>{row.lab}</strong>
-                        <div className="cell-muted" style={{ fontSize: '10.5px' }}>{row.sub}</div>
-                      </div>
-                    </td>
-                    <td className="cell-muted" style={{ fontSize: '11.5px' }}>{row.spec}</td>
-                    <td>
-                      <strong className="mono" style={{ color: row.statusTone === 'danger' ? '#f87171' : '#ffffff' }}>
-                        {row.power}
-                      </strong>
-                    </td>
-                    <td>
-                      <span className={`badge badge-${row.statusTone}`}>
-                        <span className="badge-dot" /> {row.status}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ fontSize: '11px' }}>
-                        <div>{row.audited}</div>
-                        <div className="cell-muted">{row.auditor}</div>
-                      </div>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
-                        <button
-                          className="icon-btn"
-                          style={{ width: '26px', height: '26px' }}
-                          onClick={() => toast.info(`Edit ${row.code}`)}
-                        >
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          className="icon-btn"
-                          style={{ width: '26px', height: '26px', color: '#f87171' }}
-                          onClick={() => handleDelete(row.code)}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </td>
+          {activeTab === 'INVENTORY' && (
+            <>
+              <div className="table-wrap" tabIndex={0} role="region" aria-label="Tabel inventaris PC hasil audit">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>KODE PC</th>
+                      <th>RUANG LABORATORIUM</th>
+                      <th>SPESIFIKASI HARDWARE</th>
+                      <th>DAYA STANDBY</th>
+                      <th>STATUS KONDISI</th>
+                      <th>TERAKHIR DIVERIFIKASI</th>
+                      <th style={{ textAlign: 'right' }}>AKSI</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedAudits.map((row) => {
+                      const statusLabel = row.is_faulty
+                        ? 'Anomali'
+                        : row.spec.standby_watt === 0
+                          ? 'Mati (0W)'
+                          : row.spec.standby_watt > 5
+                            ? 'Standby Boros'
+                            : 'Normal'
+                      const statusTone = row.is_faulty ? 'danger' : row.spec.standby_watt > 5 ? 'warning' : 'success'
+                      return (
+                        <tr key={row.id}>
+                          <td className="cell-strong" style={{ color: '#ffffff' }}>{row.pc_number}</td>
+                          <td>
+                            <strong>{row.lab_name ?? `Lab ${row.lab_room_id}`}</strong>
+                          </td>
+                          <td className="cell-muted" style={{ fontSize: '11.5px' }}>{row.spec.label}</td>
+                          <td>
+                            <strong className="mono" style={{ color: row.is_faulty ? '#f87171' : '#ffffff' }}>
+                              {number(row.spec.standby_watt, 2)} W
+                            </strong>
+                          </td>
+                          <td>
+                            <span className={`badge badge-${statusTone}`}>
+                              <span className="badge-dot" /> {statusLabel}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ fontSize: '11px' }}>
+                              <div>{relativeTime(row.audited_at)}</div>
+                              <div className="cell-muted">{row.auditor?.name ?? 'Auditor'}</div>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '4px' }}>
+                              <button
+                                type="button"
+                                className="icon-btn"
+                                style={{ width: '26px', height: '26px' }}
+                                aria-label={`Edit ${row.pc_number}`}
+                                onClick={() => openEditAudit(row)}
+                              >
+                                <Pencil size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                className="icon-btn"
+                                style={{ width: '26px', height: '26px', color: '#f87171' }}
+                                aria-label={`Hapus ${row.pc_number}`}
+                                onClick={() => void handleDeleteAudit(row)}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginTop: '14px',
+                  fontSize: '11px',
+                  color: '#94a3b8',
+                }}
+              >
+                <span>
+                  Menampilkan {(safePage - 1) * PAGE_SIZE + 1}-{Math.min(safePage * PAGE_SIZE, filteredAudits.length)} dari {filteredAudits.length} unit PC
+                </span>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-secondary"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                  >
+                    &lt;
+                  </button>
+                  <span className="mono" style={{ padding: '0 8px' }}>
+                    {safePage} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-secondary"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                  >
+                    &gt;
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'LABS' && (
+            <div className="table-wrap" tabIndex={0} role="region" aria-label="Daftar spesifikasi hardware master">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>SPESIFIKASI</th>
+                    <th>CPU</th>
+                    <th>STANDBY MASTER</th>
+                    <th>STATUS</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Bottom Pagination matching Screen 6 */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginTop: '14px',
-              fontSize: '11px',
-              color: '#94a3b8',
-            }}
-          >
-            <span>Menampilkan 1-7 dari 240 unit PC inventaris | Lab 1 s/d Lab 6</span>
-            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-              <button className="btn btn-xs btn-secondary">&lt;</button>
-              <button className="btn btn-xs btn-primary">1</button>
-              <button className="btn btn-xs btn-secondary">2</button>
-              <button className="btn btn-xs btn-secondary">3</button>
-              <span>...</span>
-              <button className="btn btn-xs btn-secondary">35</button>
-              <button className="btn btn-xs btn-secondary">&gt;</button>
+                </thead>
+                <tbody>
+                  {specs.map((spec) => (
+                    <tr key={spec.id}>
+                      <td className="cell-strong">{spec.ram_gb} GB RAM · {spec.storage_gb} GB {spec.storage_type}</td>
+                      <td className="cell-muted">{spec.cpu ?? '—'}</td>
+                      <td className="mono">{number(spec.standby_watt, 2)} W</td>
+                      <td>
+                        <span className={`badge badge-${spec.is_active ? 'success' : 'neutral'}`}>
+                          {spec.is_active ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
+          )}
+
+          {activeTab === 'RBAC' && (
+            <div className="table-wrap" tabIndex={0} role="region" aria-label="Daftar akun pengguna RBAC">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>NAMA</th>
+                    <th>EMAIL</th>
+                    <th>PERAN</th>
+                    <th>STATUS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((u) => (
+                    <tr key={u.id}>
+                      <td className="cell-strong">{u.name}</td>
+                      <td className="cell-muted">{u.email}</td>
+                      <td><span className="badge badge-info">{u.role_label}</span></td>
+                      <td>
+                        <span className={`badge badge-${u.is_active ? 'success' : 'neutral'}`}>
+                          {u.is_active ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
-        {/* Right Sidebar: 6 Lab Distribution Donut + RBAC 15 User Summary + Facility Photo */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* 1. Donut Card: Distribusi 6 Lab */}
           <div className="card" style={{ padding: '16px 18px' }}>
             <div className="card-head" style={{ marginBottom: '8px' }}>
               <div>
                 <h3 className="card-title" style={{ fontSize: '13.5px' }}>
-                  Distribusi 6 Lab <span style={{ color: '#94a3b8', fontSize: '11px' }}>40 PC / Lab</span>
+                  Distribusi {labs.length} Lab <span style={{ color: '#94a3b8', fontSize: '11px' }}>({labs.reduce((s, l) => s + l.capacity, 0)} PC Target)</span>
                 </h3>
                 <p className="card-sub" style={{ fontSize: '11px' }}>
-                  Kapasitas seragam 40 workstation per ruangan dengan sensor IoT terintegrasi.
+                  Progress audit per ruang laboratorium komputer.
                 </p>
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', margin: '14px 0' }}>
-              {/* Donut graphic */}
-              <div style={{ position: 'relative', width: '90px', height: '90px', flexShrink: 0 }}>
-                <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-                  <circle cx="18" cy="18" r="14" fill="none" stroke="#26292e" strokeWidth="4.5" />
-                  <circle cx="18" cy="18" r="14" fill="none" stroke="#10b981" strokeWidth="4.5" strokeDasharray="16.6 100" strokeDashoffset="0" />
-                  <circle cx="18" cy="18" r="14" fill="none" stroke="#0ea5e9" strokeWidth="4.5" strokeDasharray="16.6 100" strokeDashoffset="-16.6" />
-                  <circle cx="18" cy="18" r="14" fill="none" stroke="#38bdf8" strokeWidth="4.5" strokeDasharray="16.6 100" strokeDashoffset="-33.2" />
-                  <circle cx="18" cy="18" r="14" fill="none" stroke="#f97316" strokeWidth="4.5" strokeDasharray="16.6 100" strokeDashoffset="-49.8" />
-                  <circle cx="18" cy="18" r="14" fill="none" stroke="#f59e0b" strokeWidth="4.5" strokeDasharray="16.6 100" strokeDashoffset="-66.4" />
-                  <circle cx="18" cy="18" r="14" fill="none" stroke="#a78bfa" strokeWidth="4.5" strokeDasharray="16.6 100" strokeDashoffset="-83" />
-                </svg>
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 700,
-                    lineHeight: 1,
-                  }}
-                >
-                  <span style={{ fontSize: '13px', color: '#ffffff' }}>240</span>
-                  <span style={{ fontSize: '7.5px', color: '#94a3b8' }}>TOTAL PC</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {labs.map((lab) => (
+                <div key={lab.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', padding: '6px 8px', backgroundColor: '#131518', borderRadius: '6px' }}>
+                  <span>{lab.name}</span>
+                  <span className="mono" style={{ color: '#4edea3' }}>
+                    {lab.audited_count ?? 0}/{lab.capacity}
+                  </span>
                 </div>
-              </div>
-
-              {/* Legend 6 labs */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', fontSize: '10.5px' }}>
-                <span style={{ color: '#10b981' }}>● Lab 1 (Dasar)</span>
-                <span style={{ color: '#0ea5e9' }}>● Lab 2 (RPL)</span>
-                <span style={{ color: '#38bdf8' }}>● Lab 3 (Jaringan)</span>
-                <span style={{ color: '#f97316' }}>● Lab 4 (Multimedia)</span>
-                <span style={{ color: '#f59e0b' }}>● Lab 5 (AI &amp; Data)</span>
-                <span style={{ color: '#a78bfa' }}>● Lab 6 (Web)</span>
-              </div>
+              ))}
             </div>
           </div>
 
-          {/* 2. RBAC Summary Card: Hak Akses RBAC 15 User */}
           <div className="card" style={{ padding: '16px 18px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <ShieldCheck size={16} color="#4edea3" />
-                <h3 className="card-title" style={{ fontSize: '13.5px' }}>Hak Akses RBAC (15 User)</h3>
+                <h3 className="card-title" style={{ fontSize: '13.5px' }}>Hak Akses RBAC ({users.length} User)</h3>
               </div>
               <Link to="/users" style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 600 }}>
                 Kelola Role
@@ -431,7 +596,7 @@ export default function SpecsPage() {
                   <strong style={{ fontSize: '11.5px', color: '#4edea3' }}>Dosen Admin</strong>
                   <div style={{ fontSize: '10px', color: '#94a3b8' }}>Akses Penuh / Master / DB</div>
                 </div>
-                <span className="mono" style={{ fontSize: '12px', fontWeight: 700 }}>2 Akun</span>
+                <span className="mono" style={{ fontSize: '12px', fontWeight: 700 }}>{roleCounts.ADMIN} Akun</span>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', backgroundColor: '#131518', borderRadius: '8px' }}>
@@ -439,7 +604,7 @@ export default function SpecsPage() {
                   <strong style={{ fontSize: '11.5px', color: '#38bdf8' }}>Auditor Lapangan</strong>
                   <div style={{ fontSize: '10px', color: '#94a3b8' }}>Input Form Audit &amp; Verifikasi</div>
                 </div>
-                <span className="mono" style={{ fontSize: '12px', fontWeight: 700 }}>6 Akun</span>
+                <span className="mono" style={{ fontSize: '12px', fontWeight: 700 }}>{roleCounts.AUDITOR} Akun</span>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', backgroundColor: '#131518', borderRadius: '8px' }}>
@@ -447,87 +612,133 @@ export default function SpecsPage() {
                   <strong style={{ fontSize: '11.5px', color: '#fbbf24' }}>Facility Maintenance</strong>
                   <div style={{ fontSize: '10px', color: '#94a3b8' }}>Trip MCB &amp; Service Alert</div>
                 </div>
-                <span className="mono" style={{ fontSize: '12px', fontWeight: 700 }}>4 Akun</span>
+                <span className="mono" style={{ fontSize: '12px', fontWeight: 700 }}>{roleCounts.MAINTENANCE} Akun</span>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', backgroundColor: '#131518', borderRadius: '8px' }}>
                 <div>
                   <strong style={{ fontSize: '11.5px', color: '#a78bfa' }}>Pimpinan Kampus</strong>
-                  <div style={{ fontSize: '10px', color: '#94a3b8' }}>Read-Only KPI &amp; Rupiah Burn</div>
+                  <div style={{ fontSize: '10px', color: '#94a3b8' }}>Read-Only KPI &amp; Laporan PDF</div>
                 </div>
-                <span className="mono" style={{ fontSize: '12px', fontWeight: 700 }}>3 Akun</span>
+                <span className="mono" style={{ fontSize: '12px', fontWeight: 700 }}>{roleCounts.PIMPINAN} Akun</span>
               </div>
-            </div>
-
-            <div style={{ borderTop: '1px solid #26292e', paddingTop: '10px', marginTop: '12px', fontSize: '10.5px', color: '#10b981' }}>
-              ✓ Audit log RBAC: Terakhir diubah oleh Dr. R. Palit (Kemarin 19:40).
-            </div>
-          </div>
-
-          {/* 3. Facility Hardware Card */}
-          <div className="card" style={{ padding: '16px 18px', backgroundColor: '#131518' }}>
-            <span className="eyebrow" style={{ fontSize: '9px', color: '#94a3b8' }}>
-              FASILITAS HARDWARE TERKINI • FIK UNKLAB
-            </span>
-            <div
-              style={{
-                marginTop: '8px',
-                height: '80px',
-                borderRadius: '8px',
-                background: 'linear-gradient(135deg, #14231b, #0f1c24)',
-                border: '1px solid #26292e',
-                display: 'flex',
-                alignItems: 'flex-end',
-                justifyContent: 'space-between',
-                padding: '10px 12px',
-              }}
-            >
-              <div>
-                <strong style={{ fontSize: '12px', color: '#ffffff' }}>Lab 2 RPL Workstations</strong>
-                <div style={{ fontSize: '10px', color: '#4edea3', fontFamily: 'var(--font-mono)' }}>
-                  v-Node Rev 3.2
-                </div>
-              </div>
-              <span className="badge badge-success" style={{ fontSize: '9px' }}>Active</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Modal Tambah Data Baru */}
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Tambah Unit PC Baru">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            toast.success('Unit baru berhasil ditambahkan!')
-            setCreateOpen(false)
-          }}
-        >
+      <Modal
+        open={auditModalOpen}
+        onClose={() => setAuditModalOpen(false)}
+        title={editingAudit ? `Ubah Catatan ${editingAudit.pc_number}` : 'Tambah Catatan Audit PC'}
+      >
+        <form onSubmit={handleSaveAudit} className="form-stack">
+          {!editingAudit && (
+            <div className="field">
+              <label htmlFor="modalAuditLab">Laboratorium</label>
+              <select
+                id="modalAuditLab"
+                name="lab_room_id"
+                className="input"
+                value={formLabId}
+                onChange={(e) => setFormLabId(e.target.value)}
+                required
+              >
+                {labs.map((lab) => (
+                  <option key={lab.id} value={lab.id}>{lab.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="field">
-            <label>Kode PC</label>
-            <input className="input" placeholder="contoh: LAB1-PC41" required />
+            <label htmlFor="modalAuditPc">Kode PC</label>
+            <input
+              id="modalAuditPc"
+              name="pc_number"
+              className="input"
+              placeholder="contoh: PC-40"
+              value={formPcNumber}
+              onChange={(e) => setFormPcNumber(e.target.value)}
+              required
+            />
           </div>
           <div className="field">
-            <label>Laboratorium</label>
-            <select className="input">
-              <option>Lab 1 Komputer Dasar</option>
-              <option>Lab 2 Rekayasa Perangkat Lunak</option>
-              <option>Lab 3 Jaringan &amp; Keamanan</option>
-              <option>Lab 4 AI &amp; Data Science</option>
-              <option>Lab 5 Multimedia &amp; Desain</option>
-              <option>Lab 6 Riset &amp; Inovasi</option>
+            <label htmlFor="modalAuditSpec">Spesifikasi Hardware</label>
+            <select
+              id="modalAuditSpec"
+              name="master_pc_spec_id"
+              className="input"
+              value={formSpecId}
+              onChange={(e) => setFormSpecId(e.target.value)}
+              required
+            >
+              {specs.map((s) => (
+                <option key={s.id} value={s.id}>{s.label} ({s.standby_watt}W)</option>
+              ))}
+            </select>
+          </div>
+          <label className="checklist-item">
+            <input type="checkbox" checked={formFaulty} onChange={(e) => setFormFaulty(e.target.checked)} style={{ accentColor: '#ef4444' }} />
+            <span>Tandai unit bermasalah / anomali</span>
+          </label>
+          {formFaulty && (
+            <div className="field">
+              <label htmlFor="modalAuditNote">Catatan Kendala</label>
+              <textarea
+                id="modalAuditNote"
+                name="fault_note"
+                className="input textarea"
+                rows={2}
+                value={formFaultNote}
+                onChange={(e) => setFormFaultNote(e.target.value)}
+              />
+            </div>
+          )}
+          {auditError && <div className="inline-error" role="alert" aria-live="polite">{auditError}</div>}
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => setAuditModalOpen(false)}>
+              Batal
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={savingAudit}>
+              {savingAudit ? 'Menyimpan...' : 'Simpan Data'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={specModalOpen} onClose={() => setSpecModalOpen(false)} title="Tambah Spesifikasi Hardware Master">
+        <form onSubmit={handleCreateSpec} className="form-stack">
+          <div className="field">
+            <label htmlFor="specRam">RAM (GB)</label>
+            <input id="specRam" name="ram_gb" type="number" min="1" max="1024" className="input" value={specRam} onChange={(e) => setSpecRam(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor="specStorage">Kapasitas Storage (GB)</label>
+            <input id="specStorage" name="storage_gb" type="number" min="1" max="100000" className="input" value={specStorage} onChange={(e) => setSpecStorage(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor="specType">Tipe Storage</label>
+            <select id="specType" name="storage_type" className="input" value={specStorageType} onChange={(e) => setSpecStorageType(e.target.value as 'SSD' | 'HDD' | 'NVME')}>
+              <option value="SSD">SSD</option>
+              <option value="NVME">NVME</option>
+              <option value="HDD">HDD</option>
             </select>
           </div>
           <div className="field">
-            <label>Spesifikasi Hardware</label>
-            <input className="input" placeholder="contoh: Core i5-12400 • 16GB • 512GB" required />
+            <label htmlFor="specCpu">CPU (opsional)</label>
+            <input id="specCpu" name="cpu" className="input" placeholder="contoh: Intel Core i5-12400" value={specCpu} onChange={(e) => setSpecCpu(e.target.value)} />
           </div>
+          <div className="field">
+            <label htmlFor="specWatt">Daya Standby Master (Watt)</label>
+            <input id="specWatt" name="standby_watt" type="number" min="0.1" step="0.1" className="input" value={specWatt} onChange={(e) => setSpecWatt(e.target.value)} required />
+          </div>
+          {specError && <div className="inline-error" role="alert" aria-live="polite">{specError}</div>}
           <div className="modal-actions">
-            <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
+            <button type="button" className="btn btn-secondary" onClick={() => setSpecModalOpen(false)}>
               Batal
             </button>
-            <button type="submit" className="btn btn-primary">
-              Simpan Data
+            <button type="submit" className="btn btn-primary" disabled={savingSpec}>
+              {savingSpec ? 'Menyimpan...' : 'Simpan Spec'}
             </button>
           </div>
         </form>

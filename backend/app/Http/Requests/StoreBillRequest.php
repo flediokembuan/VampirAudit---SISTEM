@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Models\MonthlyElectricityBill;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class StoreBillRequest extends FormRequest
 {
@@ -31,7 +31,7 @@ class StoreBillRequest extends FormRequest
                     return;
                 }
 
-                $exists = \App\Models\MonthlyElectricityBill::query()
+                $exists = MonthlyElectricityBill::query()
                     ->where('period_year', $this->integer('period_year'))
                     ->where('period_month', $this->integer('period_month'))
                     ->exists();

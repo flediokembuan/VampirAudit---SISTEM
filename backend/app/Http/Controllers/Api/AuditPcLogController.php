@@ -69,7 +69,7 @@ class AuditPcLogController extends Controller
             'storage_gb_snapshot' => $spec->storage_gb,
             'storage_type_snapshot' => $spec->storage_type,
             'cpu_snapshot' => $spec->cpu,
-            'standby_watt_snapshot' => $spec->standby_watt,
+            'standby_watt_snapshot' => $data['standby_watt_snapshot'] ?? $spec->standby_watt,
             'is_faulty' => (bool) ($data['is_faulty'] ?? false),
             'fault_note' => $data['fault_note'] ?? null,
             'audited_by' => $request->user()->id,
@@ -96,7 +96,7 @@ class AuditPcLogController extends Controller
             $data['storage_gb_snapshot'] = $spec->storage_gb;
             $data['storage_type_snapshot'] = $spec->storage_type;
             $data['cpu_snapshot'] = $spec->cpu;
-            $data['standby_watt_snapshot'] = $spec->standby_watt;
+            $data['standby_watt_snapshot'] ??= $spec->standby_watt;
         }
 
         if (array_key_exists('is_faulty', $data) && ! $data['is_faulty'] && ! array_key_exists('fault_note', $data)) {
@@ -125,7 +125,7 @@ class AuditPcLogController extends Controller
                 'audits as faulty_count' => fn ($query) => $query->where('is_faulty', true),
             ])
             ->withMax('audits', 'audited_at')
-            ->orderBy('name')
+            ->orderBy('id')
             ->get()
             ->map(fn (LabRoom $lab) => [
                 'id' => $lab->id,

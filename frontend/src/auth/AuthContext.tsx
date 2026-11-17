@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, clearToken, getToken, setToken } from '../lib/api'
+import { api, ApiError, clearToken, getStoredUser, getToken, setStoredUser, setToken } from '../lib/api'
 import type { AuthUser, Role } from '../types'
 
 interface AuthContextValue {
@@ -31,40 +31,40 @@ const MOCK_USERS: Record<string, AuthUser> = {
     name: 'Dosen Admin',
     email: 'dosen.admin@unklab.ac.id',
     role: 'ADMIN',
+    role_label: 'Dosen Admin',
     is_active: true,
-    last_login_at: new Date().toISOString(),
   },
   'admin@unklab.ac.id': {
-    id: 1,
-    name: 'Dosen Admin',
+    id: 2,
+    name: 'Dr. R. Palit (Koordinator)',
     email: 'admin@unklab.ac.id',
     role: 'ADMIN',
+    role_label: 'Dosen Admin',
     is_active: true,
-    last_login_at: new Date().toISOString(),
   },
   'auditor@unklab.ac.id': {
-    id: 2,
-    name: 'Auditor Lapangan',
+    id: 3,
+    name: 'Mario K.',
     email: 'auditor@unklab.ac.id',
     role: 'AUDITOR',
+    role_label: 'Auditor Lapangan',
     is_active: true,
-    last_login_at: new Date().toISOString(),
   },
   'maintenance@unklab.ac.id': {
-    id: 3,
-    name: 'Facility Maintenance',
+    id: 9,
+    name: 'Randy S.',
     email: 'maintenance@unklab.ac.id',
     role: 'MAINTENANCE',
+    role_label: 'Facility Maintenance',
     is_active: true,
-    last_login_at: new Date().toISOString(),
   },
   'pimpinan@unklab.ac.id': {
-    id: 4,
-    name: 'Pimpinan Kampus',
+    id: 13,
+    name: 'Nadia Sondakh (WR II)',
     email: 'pimpinan@unklab.ac.id',
     role: 'PIMPINAN',
+    role_label: 'Pimpinan Kampus',
     is_active: true,
-    last_login_at: new Date().toISOString(),
   },
 }
 
@@ -76,14 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let active = true
 
     async function restore() {
-      const savedUserStr = localStorage.getItem('vampir_user')
-      if (savedUserStr) {
-        try {
-          const parsed = JSON.parse(savedUserStr) as AuthUser
-          if (active) setUser(parsed)
-        } catch {
-          // ignore
-        }
+      const savedUser = getStoredUser()
+      if (savedUser && active) {
+        setUser(savedUser)
       }
 
       if (!getToken()) {
@@ -95,10 +90,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const response = await api.get<{ user: AuthUser }>('/me')
         if (active) {
           setUser(response.user)
-          localStorage.setItem('vampir_user', JSON.stringify(response.user))
+          setStoredUser(response.user)
         }
       } catch {
-        if (!localStorage.getItem('vampir_user')) {
+        if (!getStoredUser()) {
           clearToken()
         }
       } finally {
@@ -109,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void restore()
 
     const onUnauthorized = () => {
-      localStorage.removeItem('vampir_user')
+      clearToken()
       setUser(null)
     }
     window.addEventListener('vampir:unauthorized', onUnauthorized)
@@ -129,11 +124,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       setToken(response.token)
       setUser(response.user)
-      localStorage.setItem('vampir_user', JSON.stringify(response.user))
+      setStoredUser(response.user)
       return response.user
-    } catch (caught: any) {
-      // Smart database fallback: if MySQL refused connection, fallback gracefully to mock demo user
+    } catch (caught: unknown) {
+      if (caught instanceof ApiError && caught.status < 500) {
+        throw caught
+      }
+      // Offline/unreachable backend fallback: only when backend server is unreachable
       const lower = email.trim().toLowerCase()
+      const role: Role = lower.includes('auditor')
+        ? 'AUDITOR'
+        : lower.includes('maint')
+          ? 'MAINTENANCE'
+          : lower.includes('pimpinan')
+            ? 'PIMPINAN'
+            : 'ADMIN'
       const fallbackUser: AuthUser = MOCK_USERS[lower] || {
         id: 1,
         name: lower.includes('auditor')
@@ -144,20 +149,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               ? 'Pimpinan Kampus'
               : 'Dosen Admin',
         email: email.trim(),
-        role: (lower.includes('auditor')
-          ? 'AUDITOR'
-          : lower.includes('maint')
-            ? 'MAINTENANCE'
-            : lower.includes('pimpinan')
-              ? 'PIMPINAN'
-              : 'ADMIN') as Role,
+        role,
+        role_label: roleLabels[role],
         is_active: true,
-        last_login_at: new Date().toISOString(),
       }
 
       setToken('vampir-offline-token')
       setUser(fallbackUser)
-      localStorage.setItem('vampir_user', JSON.stringify(fallbackUser))
+      setStoredUser(fallbackUser)
       return fallbackUser
     }
   }, [])
@@ -169,7 +168,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Token may already be invalid; local cleanup still applies.
     }
     clearToken()
-    localStorage.removeItem('vampir_user')
     setUser(null)
   }, [])
 

@@ -209,6 +209,7 @@ export interface AdminDashboard {
   totals: AdminTotals
   labs: LabSummary[]
   panels: {
+    labs?: PanelLab[]
     summary: PanelOverview['summary']
     warnings: PanelStatus[]
     data_note: string
