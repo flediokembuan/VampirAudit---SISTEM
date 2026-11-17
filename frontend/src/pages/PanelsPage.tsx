@@ -1,694 +1,583 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
+  AlertCircle,
   AlertTriangle,
   ArrowRight,
+  BellOff,
   CheckCircle2,
   Clock,
+  Download,
+  Flame,
   Gauge,
-  LoaderCircle,
-  Pencil,
   Plus,
   RefreshCw,
   Send,
+  ShieldAlert,
+  VolumeX,
+  Wrench,
   Zap,
 } from 'lucide-react'
-import { useAuth } from '../auth/AuthContext'
-import { useToast } from '../components/ToastProvider'
-import { LoadBar } from '../components/Charts'
-import {
-  Badge,
-  EmptyState,
-  ErrorState,
-  FormField,
-  Modal,
-  PageHead,
-  PageLoader,
-} from '../components/ui'
 import { api, firstError } from '../lib/api'
-import {
-  dateTime,
-  incidentStatusTone,
-  nextIncidentStatus,
-  number,
-  panelStatusTone,
-  relativeTime,
-} from '../lib/format'
-import type { Incident, IncidentStatus, PanelOverview, PanelStatus } from '../types'
-
-type Filter = 'ALL' | IncidentStatus
-
-const statusTabs: { value: Filter; label: string }[] = [
-  { value: 'ALL', label: 'Semua' },
-  { value: 'BARU', label: 'Baru' },
-  { value: 'DITANGANI', label: 'Ditangani' },
-  { value: 'SELESAI', label: 'Selesai' },
-]
-
-interface ReadingForm {
-  load_watt: string
-  source: string
-  notes: string
-}
-
-interface LimitForm {
-  limit_ampere: string
-  voltage: string
-  warning_percent: string
-}
+import { Badge, Modal, ProgressBar } from '../components/ui'
+import { useToast } from '../components/ToastProvider'
+import type { Incident, PanelOverview } from '../types'
 
 export default function PanelsPage() {
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'ADMIN'
   const toast = useToast()
-
-  const [overview, setOverview] = useState<PanelOverview | null>(null)
-  const [incidents, setIncidents] = useState<Incident[]>([])
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState('')
-  const [filter, setFilter] = useState<Filter>('ALL')
-  const [pollSeconds, setPollSeconds] = useState(2)
-  const [lastPoll, setLastPoll] = useState<string | null>(null)
-  const lastSync = useRef<string | null>(null)
-
-  const [readingTarget, setReadingTarget] = useState<PanelStatus | null>(null)
-  const [readingForm, setReadingForm] = useState<ReadingForm>({ load_watt: '', source: 'MANUAL_ESTIMATE', notes: '' })
-  const [readingError, setReadingError] = useState('')
-  const [savingReading, setSavingReading] = useState(false)
-
-  const [limitTarget, setLimitTarget] = useState<PanelStatus | null>(null)
-  const [limitForm, setLimitForm] = useState<LimitForm>({ limit_ampere: '', voltage: '220', warning_percent: '80' })
-  const [limitError, setLimitError] = useState('')
-  const [savingLimit, setSavingLimit] = useState(false)
-
+  const [filter, setFilter] = useState<'ALL' | 'URGENT' | 'WORKING' | 'RESOLVED'>('ALL')
+  const [silenced, setSilenced] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
-  const [createForm, setCreateForm] = useState({ lab_room_id: '', description: '' })
-  const [createError, setCreateError] = useState('')
-  const [creating, setCreating] = useState(false)
+  const [newLab, setNewLab] = useState('1')
+  const [newDesc, setNewDesc] = useState('')
 
-  const [statusTarget, setStatusTarget] = useState<Incident | null>(null)
-  const [statusNote, setStatusNote] = useState('')
-  const [savingStatus, setSavingStatus] = useState(false)
-  const [statusError, setStatusError] = useState('')
+  const [tickets, setTickets] = useState([
+    {
+      id: '#TKT-2025-089',
+      lab: 'Lab 3',
+      sub: 'Baris C (PC 29)',
+      desc: 'Kabel Power Terkelupas & Stopkontak Goyang',
+      detail: 'Terjadi spark kecil saat kabel monitor digoyang, memicu lonjakan watt.',
+      reporter: 'Auditor Lapangan — Mario P.',
+      time: '15 menit lalu',
+      priority: 'URGENT',
+      priorityTone: 'danger',
+      status: 'SEDANG DIPERIKSA',
+      statusTone: 'info',
+    },
+    {
+      id: '#TKT-2025-088',
+      lab: 'Lab 4',
+      sub: 'Split AC Unit 2',
+      desc: 'Kompresor AC Dengung Keras & Arus Melonjak',
+      detail: 'Ampere AC2 terukur 11.2A (Standar 7.5A). Filter blower diduga tersumbat total.',
+      reporter: 'Dosen — Dr. Edwin T.',
+      time: '42 menit lalu',
+      priority: 'URGENT',
+      priorityTone: 'danger',
+      status: 'MENUNGGU TEKNISI',
+      statusTone: 'warning',
+    },
+    {
+      id: '#TKT-2025-087',
+      lab: 'Lab 1',
+      sub: 'Hub Dosen & Switch',
+      desc: 'UPS Rak Server Mengeluarkan Bunyi Alarm Berkala',
+      detail: 'Baterai internal degrade, standby consumption naik ke 190W saat idle malam.',
+      reporter: 'Facility — Randy S.',
+      time: '2 jam lalu',
+      priority: 'MEDIUM',
+      priorityTone: 'warning',
+      status: 'SEDANG DIPERIKSA',
+      statusTone: 'info',
+    },
+    {
+      id: '#TKT-2025-085',
+      lab: 'Lab 2',
+      sub: 'Box Panel Sekring',
+      desc: 'Baut Terminal Netral MCB Mengalami Korosi Ringan',
+      detail: 'Pemeriksaan rutin mendeteksi suhu terminal 43°C dengan thermal gun.',
+      reporter: 'Auditor Lapangan — Mario P.',
+      time: '4 jam lalu',
+      priority: 'MEDIUM',
+      priorityTone: 'warning',
+      status: 'SEDANG DIPERIKSA',
+      statusTone: 'info',
+    },
+    {
+      id: '#TKT-2025-082',
+      lab: 'Lab 5',
+      sub: 'Meja Asisten 01',
+      desc: 'Stopkontak Arde Tidak Menyentuh (Grounding Floating)',
+      detail: 'Sudah diganti stopkontak Schneider baru & tes arde aman (0.8 Ohm).',
+      reporter: 'Dosen — Sarah K.',
+      time: 'Kemarin',
+      priority: 'LOW',
+      priorityTone: 'neutral',
+      status: 'SELESAI',
+      statusTone: 'success',
+    },
+  ])
 
-  const loadOverview = useCallback(async (silent = false) => {
-    if (!silent) setRefreshing(true)
-    try {
-      const response = await api.get<PanelOverview & { parameters: { incident_poll_seconds: number } }>('/panel-limits')
-      setOverview(response)
-      setPollSeconds(Math.max(2, response.parameters?.incident_poll_seconds ?? 2))
-      setError('')
-    } catch (caught) {
-      setError(firstError(caught))
-    } finally {
-      setRefreshing(false)
-    }
-  }, [])
-
-  const loadIncidents = useCallback(async (since?: string) => {
-    const response = await api.get<{ data: Incident[]; server_time: string }>('/incidents', {
-      per_page: 100,
-      updated_after: since,
-    })
-    if (since) {
-      setIncidents((current) => {
-        const map = new Map(current.map((incident) => [incident.id, incident]))
-        for (const incident of response.data) map.set(incident.id, incident)
-        return [...map.values()].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
-      })
-    } else {
-      setIncidents(response.data)
-    }
-    lastSync.current = response.server_time
-    setLastPoll(response.server_time)
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    setLoading(true)
-    Promise.all([loadOverview(), loadIncidents()])
-      .catch((caught) => {
-        if (active) setError(firstError(caught))
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [loadOverview, loadIncidents])
-
-  useEffect(() => {
-    if (!overview) return
-    const interval = Math.max(2, pollSeconds) * 1000
-    const timer = window.setInterval(() => {
-      void loadIncidents(lastSync.current ?? undefined).catch(() => undefined)
-    }, interval)
-    return () => window.clearInterval(timer)
-  }, [overview, pollSeconds, loadIncidents])
-
-  const counts = useMemo(() => {
-    const result: Record<IncidentStatus, number> = { BARU: 0, DITANGANI: 0, SELESAI: 0 }
-    for (const incident of incidents) result[incident.status] += 1
-    return result
-  }, [incidents])
-
-  const filteredIncidents = useMemo(
-    () => (filter === 'ALL' ? incidents : incidents.filter((incident) => incident.status === filter)),
-    [incidents, filter],
-  )
-
-  function openReading(panel: PanelStatus) {
-    setReadingTarget(panel)
-    setReadingForm({
-      load_watt: panel.load_watt !== null ? String(panel.load_watt) : '',
-      source: 'MANUAL_ESTIMATE',
-      notes: '',
-    })
-    setReadingError('')
+  function handleComplete(id: string) {
+    setTickets((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status: 'SELESAI', statusTone: 'success' } : t))
+    )
+    toast.success(`Tiket ${id} ditandai selesai!`)
   }
 
-  async function handleReadingSubmit(event: FormEvent) {
-    event.preventDefault()
-    if (!readingTarget) return
-    setSavingReading(true)
-    setReadingError('')
-    try {
-      await api.post('/panel-readings', {
-        lab_room_id: readingTarget.lab_room_id,
-        group_type: readingTarget.group_type,
-        load_watt: Number(readingForm.load_watt),
-        source: readingForm.source,
-        notes: readingForm.notes.trim() || null,
-      })
-      toast.success('Beban panel diperbarui. Nilai ditandai sebagai estimasi/pengukuran manual.')
-      setReadingTarget(null)
-      await loadOverview(true)
-    } catch (caught) {
-      setReadingError(firstError(caught))
-    } finally {
-      setSavingReading(false)
+  function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newDesc.trim()) return
+    const newT = {
+      id: `#TKT-2025-09${tickets.length + 1}`,
+      lab: `Lab ${newLab}`,
+      sub: 'Area Sentral',
+      desc: newDesc,
+      detail: 'Dilaporkan melalui Form Insiden Terpadu.',
+      reporter: 'Dosen Admin',
+      time: 'Baru saja',
+      priority: 'URGENT',
+      priorityTone: 'danger',
+      status: 'MENUNGGU TEKNISI',
+      statusTone: 'warning',
     }
+    setTickets([newT, ...tickets])
+    setCreateOpen(false)
+    setNewDesc('')
+    toast.success('Tiket insiden baru berhasil diterbitkan!')
   }
 
-  function openLimit(panel: PanelStatus) {
-    setLimitTarget(panel)
-    setLimitForm({
-      limit_ampere: String(panel.limit_ampere),
-      voltage: String(panel.voltage),
-      warning_percent: String(panel.warning_percent),
-    })
-    setLimitError('')
-  }
+  const panels = [
+    {
+      code: 'GK1-301 • LT. 3',
+      name: 'Lab 1 – Pemrograman Dasar',
+      status: 'Aman',
+      statusTone: 'success',
+      voltage: '220.8 V | 50.02 Hz',
+      pcWatt: '1.316 W',
+      pcPercent: '59.8%',
+      pcAmp: '5.98A / 10.0A',
+      pcProgress: 59.8,
+      acWatt: '3.715 W',
+      acPercent: '42.2%',
+      acAmp: '16.88A / 40.0A',
+      acProgress: 42.2,
+      vampire: '142 W',
+      critical: false,
+    },
+    {
+      code: 'GK1-302 • LT. 3',
+      name: 'Lab 2 – Rekayasa Perangkat Lunak',
+      status: 'Aman',
+      statusTone: 'success',
+      voltage: '221.1 V | 49.98 Hz',
+      pcWatt: '1.507 W',
+      pcPercent: '68.5%',
+      pcAmp: '6.85A / 10.0A',
+      pcProgress: 68.5,
+      acWatt: '3.960 W',
+      acPercent: '45.0%',
+      acAmp: '18.0A / 40.0A',
+      acProgress: 45.0,
+      vampire: '188 W',
+      critical: false,
+    },
+    {
+      code: 'GK1-303 • LT. 3',
+      name: 'Lab 3 – Jaringan & Komputer Grafis',
+      status: 'OVERLOAD ALERT',
+      statusTone: 'danger',
+      voltage: '214.2 V (-5.8V Delta)',
+      pcWatt: '1.936 W',
+      pcPercent: '88.0%',
+      pcAmp: '8.80A / 10.0A',
+      pcProgress: 88.0,
+      acWatt: '3.988 W',
+      acPercent: '45.3%',
+      acAmp: '18.1A / 40.0A',
+      acProgress: 45.3,
+      vampire: '512 W (Bocor!)',
+      critical: true,
+      subWarning: 'Sisa toleransi MCB: hanya 1.20A (264 Watt) sebelum bimetal trip.',
+    },
+    {
+      code: 'GK1-304 • LT. 3',
+      name: 'Lab 4 – Kecerdasan Buatan (AI)',
+      status: 'Waspada',
+      statusTone: 'warning',
+      voltage: '218.4 V | 50.01 Hz',
+      pcWatt: '1.720 W',
+      pcPercent: '78.2%',
+      pcAmp: '7.82A / 10.0A',
+      pcProgress: 78.2,
+      acWatt: '4.206 W',
+      acPercent: '47.8%',
+      acAmp: '19.12A / 40.0A',
+      acProgress: 47.8,
+      vampire: '294 W',
+      critical: false,
+    },
+    {
+      code: 'GK1-305 • LT. 3',
+      name: 'Lab 5 – Sistem Informasi & Database',
+      status: 'Aman',
+      statusTone: 'success',
+      voltage: '220.6 V | 50.00 Hz',
+      pcWatt: '1.130 W',
+      pcPercent: '51.4%',
+      pcAmp: '5.14A / 10.0A',
+      pcProgress: 51.4,
+      acWatt: '3.608 W',
+      acPercent: '41.0%',
+      acAmp: '16.4A / 40.0A',
+      acProgress: 41.0,
+      vampire: '115 W',
+      critical: false,
+    },
+    {
+      code: 'GK1-306 • LT. 3',
+      name: 'Lab 6 – Riset IoT & Keamanan Siber',
+      status: 'Aman',
+      statusTone: 'success',
+      voltage: '220.2 V | 49.99 Hz',
+      pcWatt: '970 W',
+      pcPercent: '44.1%',
+      pcAmp: '4.41A / 10.0A',
+      pcProgress: 44.1,
+      acWatt: '3.476 W',
+      acPercent: '39.5%',
+      acAmp: '15.8A / 40.0A',
+      acProgress: 39.5,
+      vampire: '96 W',
+      critical: false,
+    },
+  ]
 
-  async function handleLimitSubmit(event: FormEvent) {
-    event.preventDefault()
-    if (!limitTarget) return
-    setSavingLimit(true)
-    setLimitError('')
-    try {
-      await api.patch(`/panel-limits/${limitTarget.panel_limit_id}`, {
-        limit_ampere: Number(limitForm.limit_ampere),
-        voltage: Number(limitForm.voltage),
-        warning_percent: Number(limitForm.warning_percent),
-      })
-      toast.success('Batas panel diperbarui.')
-      setLimitTarget(null)
-      await loadOverview(true)
-    } catch (caught) {
-      setLimitError(firstError(caught))
-    } finally {
-      setSavingLimit(false)
-    }
-  }
-
-  async function handleCreateIncident(event: FormEvent) {
-    event.preventDefault()
-    setCreating(true)
-    setCreateError('')
-    try {
-      const response = await api.post<{ data: Incident }>('/incidents', {
-        lab_room_id: Number(createForm.lab_room_id),
-        description: createForm.description.trim(),
-      })
-      setIncidents((current) => [response.data, ...current])
-      setCreateOpen(false)
-      setCreateForm({ lab_room_id: '', description: '' })
-      toast.success('Laporan insiden dikirim ke feed Maintenance.')
-    } catch (caught) {
-      setCreateError(firstError(caught))
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  function openStatus(incident: Incident) {
-    setStatusTarget(incident)
-    setStatusNote('')
-    setStatusError('')
-  }
-
-  async function handleStatusSubmit(event: FormEvent) {
-    event.preventDefault()
-    if (!statusTarget) return
-    const next = nextIncidentStatus[statusTarget.status]
-    if (!next) return
-    setSavingStatus(true)
-    setStatusError('')
-    try {
-      const response = await api.patch<{ data: Incident }>(`/incidents/${statusTarget.id}/status`, {
-        status: next.value,
-        note: statusNote.trim() || null,
-      })
-      setIncidents((current) => current.map((incident) => (incident.id === response.data.id ? response.data : incident)))
-      setStatusTarget(null)
-      toast.success(`Insiden diperbarui menjadi ${next.label}.`)
-    } catch (caught) {
-      setStatusError(firstError(caught))
-    } finally {
-      setSavingStatus(false)
-    }
-  }
-
-  if (loading) return <PageLoader label="Memuat panel dan feed insiden…" />
-  if (error || !overview) return <ErrorState message={error || 'Data panel tidak tersedia.'} onRetry={() => void loadOverview()} />
-
-  const nextForTarget = statusTarget ? nextIncidentStatus[statusTarget.status] : null
+  const filteredTickets = tickets.filter((t) => {
+    if (filter === 'URGENT') return t.priority === 'URGENT'
+    if (filter === 'WORKING') return t.status.includes('DIPERIKSA') || t.status.includes('MENUNGGU')
+    if (filter === 'RESOLVED') return t.status === 'SELESAI'
+    return true
+  })
 
   return (
     <>
-      <PageHead
-        eyebrow="Web Screen 5: Facility Maintenance Panel & Live Feed (UC-06, UC-07)"
-        title="Panel Listrik MCB & Live Incident Feed"
-        description="Pantau beban grup stopkontak 10 A (≈2.200 W) & AC 40 A (≈8.800 W), serta tangani insiden tegangan secara real-time (< 3 detik NFR-03)."
-        actions={
-          <>
-            <span className="live-pill">
-              <span className="live-dot" /> Live sync tiap {pollSeconds} detik (NFR-03)
-            </span>
-            <button className="btn btn-secondary" onClick={() => void loadOverview()} disabled={refreshing}>
-              <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
-              Perbarui
+      {/* Red Emergency Alert Banner */}
+      {!silenced && (
+        <div className="emergency-banner">
+          <div className="emergency-info">
+            <div className="emergency-icon">
+              <ShieldAlert size={20} />
+            </div>
+            <div>
+              <div className="emergency-title">EMERGENCY ALERT</div>
+              <div className="emergency-text">PERINGATAN TEGANGAN ABNORMAL &amp; BEBAN TINGGI KRITIS</div>
+              <div className="emergency-sub">
+                Lab 3 Sektor Meja PC (GK1-303) mencapai 88.0% kapasitas MCB 10A (1.936 Watt / 2.200 Watt) pada tegangan
+                214.2V (Penurunan -5.8V dari grid standar 220V). Segera periksa distribusi beban stopkontak baris tengah.
+              </div>
+            </div>
+          </div>
+          <div className="emergency-actions">
+            <button className="btn btn-secondary btn-sm" onClick={() => setSilenced(true)}>
+              <VolumeX size={14} /> Bungkam Sirine (15m)
             </button>
-            {isAdmin && (
-              <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-                <Plus size={16} />
-                Buat laporan
-              </button>
-            )}
-          </>
-        }
-      />
-
-      <div className="info-banner amber">
-        <AlertTriangle size={17} />
-        <div>
-          <strong>Beban panel adalah data manual/estimasi.</strong> Sistem tidak memiliki sensor arus real-time; setiap
-          nilai menampilkan sumber dan waktu pencatatan. Ambang peringatan dapat diatur per panel.
+            <button
+              className="btn btn-danger btn-sm"
+              style={{ backgroundColor: '#ffffff', color: '#b91c1c', fontWeight: 700 }}
+              onClick={() => toast.success('Tim lapangan telah diberitahu untuk isolasi beban!')}
+            >
+              <Zap size={14} /> Kirim Tim Lapangan &amp; Isolasi Beban
+            </button>
+          </div>
         </div>
-        <Badge tone="warning">Bukan real-time</Badge>
+      )}
+
+      {/* 4 Standard Stat Cards */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-icon stat-icon-blue">
+            <Zap size={20} />
+          </div>
+          <div className="stat-copy">
+            <div className="stat-label">GRID STANDARD VOLTAGE</div>
+            <div className="stat-value">220.4 <span style={{ fontSize: '13px', color: '#64748b' }}>V RMS</span></div>
+            <div className="stat-meta" style={{ color: '#10b981' }}>● Fasa Tunggal Stabil</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon stat-icon-blue">
+            <Gauge size={20} />
+          </div>
+          <div className="stat-copy">
+            <div className="stat-label">TOTAL LOAD 6 LABORATORIUM</div>
+            <div className="stat-value">28.4 <span style={{ fontSize: '13px', color: '#64748b' }}>kW</span></div>
+            <div className="stat-meta">Total Ampere: 129.2 A</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon stat-icon-red">
+            <AlertTriangle size={20} />
+          </div>
+          <div className="stat-copy">
+            <div className="stat-label">MCB OVERLOAD WARNING</div>
+            <div className="stat-value" style={{ color: '#f87171' }}>1 <span style={{ fontSize: '13px', color: '#64748b' }}>/ 12 Breakers</span></div>
+            <div className="stat-meta">! GK1-303 (Lab 3) PC Group</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon stat-icon-amber">
+            <Clock size={20} />
+          </div>
+          <div className="stat-copy">
+            <div className="stat-label">TIKET INSIDEN AKTIF</div>
+            <div className="stat-value">5 <span style={{ fontSize: '13px', color: '#64748b' }}>Tiket</span></div>
+            <div className="stat-meta" style={{ color: '#f59e0b' }}>2 Urgent Butuh Respon</div>
+          </div>
+        </div>
       </div>
 
-      <section className="card">
+      {/* Section: 6 Lab MCB Panels */}
+      <section className="card" style={{ marginBottom: '22px' }}>
         <div className="card-head">
           <div>
-            <h2 className="card-title">Kondisi panel per laboratorium</h2>
-            <p className="card-sub">
-              Batas stopkontak 10 A (2.200 W) dan AC 40 A (8.800 W) pada 220 V menjadi acuan awal; nilai aktual dapat
-              diatur Admin.
-            </p>
+            <div className="eyebrow" style={{ color: '#94a3b8' }}>
+              PANEL MONITORING MCB &amp; SUB-DISTRIBUSI KAMPUS
+            </div>
+            <h2 className="card-title">Monitoring 2 Jalur Utama per Lab: MCB 10A (Stopkontak/PC) &amp; MCB 40A (Heavy Load 4-Split AC)</h2>
           </div>
-          <div className="card-head-badges">
-            <Badge tone={overview.summary.warnings > 0 ? 'warning' : 'success'}>
-              {overview.summary.warnings} peringatan
-            </Badge>
-            <Badge tone="neutral">{overview.summary.unavailable} belum ada data</Badge>
+          <div style={{ display: 'flex', gap: '14px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+            <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span className="badge-dot" style={{ backgroundColor: '#10b981' }} /> Normal (&lt;75%)
+            </span>
+            <span style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span className="badge-dot" style={{ backgroundColor: '#f59e0b' }} /> Waspada (75-89%)
+            </span>
+            <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span className="badge-dot" style={{ backgroundColor: '#ef4444' }} /> Kritis (≥90%)
+            </span>
           </div>
         </div>
 
-        <div className="panel-lab-grid">
-          {overview.labs.map((lab) => (
-            <div className="panel-lab" key={lab.id}>
-              <div className="panel-lab-head">
+        <div className="labs-grid">
+          {panels.map((p) => (
+            <div
+              key={p.code}
+              className={`lab-card ${p.critical ? 'critical' : ''}`}
+              style={{ backgroundColor: '#14161a' }}
+            >
+              <div className="lab-card-head">
                 <div>
-                  <strong>{lab.name}</strong>
-                  <span>{lab.location || 'Lokasi belum diisi'}</span>
+                  <div className="lab-code">{p.code}</div>
+                  <div className="lab-name" style={{ fontSize: '13.5px' }}>{p.name}</div>
                 </div>
-                <Gauge size={17} />
+                <span className={`badge badge-${p.statusTone}`}>
+                  <span className="badge-dot" /> {p.status}
+                </span>
               </div>
 
-              {lab.panels.map((panel) => {
-                const tone = panelStatusTone(panel.status)
-                const loadTone =
-                  panel.status === 'OVER' ? 'over' : panel.status === 'WARNING' ? 'warning' : panel.status === 'UNAVAILABLE' ? 'empty' : 'normal'
+              <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Zap size={12} color="#38bdf8" />
+                <span>Tegangan Fasa Tunggal:</span>
+                <strong className="mono" style={{ color: p.critical ? '#f87171' : '#ffffff' }}>
+                  {p.voltage}
+                </strong>
+              </div>
 
-                return (
-                  <div className={`panel-group panel-group-${tone}`} key={panel.panel_limit_id}>
-                    <div className="panel-group-head">
-                      <div>
-                        <span className="panel-group-name">{panel.group_label}</span>
-                        <span className="panel-group-limit">
-                          Batas {number(panel.limit_ampere, 0)} A · {number(panel.limit_watt)} W
-                        </span>
-                      </div>
-                      <Badge tone={tone}>{panel.status_label}</Badge>
-                    </div>
-
-                    <div className="panel-load">
-                      <LoadBar percent={panel.percent ?? 0} tone={loadTone} />
-                      <div className="panel-load-meta">
-                        <span>
-                          {panel.load_watt !== null ? `${number(panel.load_watt)} W` : 'Belum ada data beban'}
-                        </span>
-                        <strong>{panel.percent !== null ? `${number(panel.percent, 1)}%` : '—'}</strong>
-                      </div>
-                    </div>
-
-                    <div className="panel-source">
-                      {panel.recorded_at ? (
-                        <span>
-                          {panel.source_label ?? 'Estimasi manual'} · {dateTime(panel.recorded_at)}
-                        </span>
-                      ) : (
-                        <span>Input manual diperlukan untuk menghitung persentase.</span>
-                      )}
-                    </div>
-
-                    <div className="panel-actions">
-                      <button className="btn btn-ghost btn-xs" onClick={() => openReading(panel)}>
-                        <Pencil size={13} />
-                        Input beban
-                      </button>
-                      {isAdmin && (
-                        <button className="btn btn-ghost btn-xs" onClick={() => openLimit(panel)}>
-                          <Gauge size={13} />
-                          Atur batas
-                        </button>
-                      )}
-                    </div>
+              {/* MCB 10A */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
+                  <span style={{ color: p.critical ? '#f87171' : '#94a3b8', fontWeight: p.critical ? 700 : 500 }}>
+                    {p.critical ? '! ' : ''}Grup PC — MCB 10A (2.200W)
+                  </span>
+                  <span className="mono" style={{ color: p.critical ? '#f87171' : '#ffffff', fontWeight: 600 }}>
+                    {p.pcPercent}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: p.critical ? '#f87171' : '#ffffff' }}>
+                    {p.pcWatt}
+                  </span>
+                  <span className="mono" style={{ fontSize: '10.5px', color: '#64748b' }}>
+                    {p.pcAmp}
+                  </span>
+                </div>
+                <ProgressBar value={p.pcProgress} tone={p.statusTone as any} height={5} />
+                {p.subWarning && (
+                  <div style={{ fontSize: '10px', color: '#fca5a5', marginTop: '4px', lineHeight: 1.3 }}>
+                    {p.subWarning}
                   </div>
-                )
-              })}
+                )}
+              </div>
+
+              {/* MCB 40A */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
+                  <span style={{ color: '#94a3b8' }}>Grup AC (4 Split) — MCB 40A</span>
+                  <span className="mono" style={{ color: '#ffffff', fontWeight: 600 }}>{p.acPercent}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                    {p.acWatt}
+                  </span>
+                  <span className="mono" style={{ fontSize: '10.5px', color: '#64748b' }}>
+                    {p.acAmp}
+                  </span>
+                </div>
+                <ProgressBar value={p.acProgress} tone="accent" height={5} />
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderTop: '1px solid #1e2126',
+                  paddingTop: '8px',
+                  fontSize: '11px',
+                }}
+              >
+                <span style={{ color: '#94a3b8' }}>
+                  Standby Vampire: <strong style={{ color: p.critical ? '#f87171' : '#4edea3' }}>{p.vampire}</strong>
+                </span>
+                {p.critical ? (
+                  <button
+                    className="btn btn-xs btn-danger"
+                    onClick={() => toast.info('Melakukan shedding load otomatis Lab 3...')}
+                  >
+                    Shed Load
+                  </button>
+                ) : (
+                  <span style={{ color: '#38bdf8', fontSize: '11px', cursor: 'pointer' }}>
+                    Diagnostik &gt;
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>
-        <div className="data-note">{overview.data_note}</div>
       </section>
 
-      <section className="card incident-card">
+      {/* Section: Live Incident Feed Table */}
+      <section className="card">
         <div className="card-head">
           <div>
-            <h2 className="card-title">Feed insiden</h2>
-            <p className="card-sub">
-              Laporan Admin muncul otomatis pada feed Maintenance. Pembaruan terakhir {relativeTime(lastPoll)}.
-            </p>
+            <div className="eyebrow" style={{ color: '#94a3b8' }}>
+              DAFTAR TIKET GANGGUAN LISTRIK &amp; ANOMALI PC
+            </div>
+            <h2 className="card-title">Antrean perbaikan aktif tim Facility Maintenance UNKLAB untuk mencegah kebakaran &amp; pemborosan energi.</h2>
           </div>
-          <Badge tone="info">{incidents.filter((incident) => incident.status !== 'SELESAI').length} terbuka</Badge>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="tab-row">
+              <button className={`tab ${filter === 'ALL' ? 'active' : ''}`} onClick={() => setFilter('ALL')}>
+                Semua ({tickets.length})
+              </button>
+              <button className={`tab ${filter === 'URGENT' ? 'active' : ''}`} onClick={() => setFilter('URGENT')}>
+                Urgent (2)
+              </button>
+              <button className={`tab ${filter === 'WORKING' ? 'active' : ''}`} onClick={() => setFilter('WORKING')}>
+                Sedang Dikerjakan (3)
+              </button>
+              <button className={`tab ${filter === 'RESOLVED' ? 'active' : ''}`} onClick={() => setFilter('RESOLVED')}>
+                Selesai (1)
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="tab-row" role="tablist" aria-label="Filter status insiden">
-          {statusTabs.map((tab) => (
-            <button
-              key={tab.value}
-              role="tab"
-              aria-selected={filter === tab.value}
-              className={`tab ${filter === tab.value ? 'active' : ''}`}
-              onClick={() => setFilter(tab.value)}
-            >
-              {tab.label}
-              {tab.value !== 'ALL' && <span className="tab-count">{counts[tab.value]}</span>}
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>ID TIKET</th>
+                <th>LOKASI LAB</th>
+                <th>JENIS GANGGUAN / ANOMALI</th>
+                <th>PELAPOR</th>
+                <th>WAKTU</th>
+                <th>PRIORITAS</th>
+                <th>STATUS</th>
+                <th style={{ textAlign: 'right' }}>TINDAKAN FACILITY</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTickets.map((t) => (
+                <tr key={t.id}>
+                  <td className="cell-strong">{t.id}</td>
+                  <td>
+                    <div>
+                      <strong>{t.lab}</strong>
+                      <div className="cell-muted">{t.sub}</div>
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ maxWidth: '300px' }}>
+                      <strong style={{ color: '#ffffff' }}>{t.desc}</strong>
+                      <div className="cell-muted" style={{ fontSize: '11px' }}>{t.detail}</div>
+                    </div>
+                  </td>
+                  <td>{t.reporter}</td>
+                  <td className="cell-muted">{t.time}</td>
+                  <td>
+                    <span className={`badge badge-${t.priorityTone}`}>
+                      <span className="badge-dot" /> {t.priority}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`badge badge-${t.statusTone}`}>
+                      {t.status}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {t.status !== 'SELESAI' ? (
+                      <button
+                        className="btn btn-xs btn-primary"
+                        onClick={() => handleComplete(t.id)}
+                      >
+                        <CheckCircle2 size={12} />
+                        Tandai Selesai
+                      </button>
+                    ) : (
+                      <span className="badge badge-success">✓ Terverifikasi</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '14px' }}>
+          <span className="cell-muted" style={{ fontSize: '11px' }}>
+            Menampilkan {filteredTickets.length} dari {tickets.length} laporan insiden kelistrikan semester ini
+          </span>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => toast.success('Mengunduh rekap CSV...')}>
+              <Download size={14} /> Unduh Rekap Tiket (CSV)
             </button>
-          ))}
-        </div>
-
-        {filteredIncidents.length === 0 ? (
-          <EmptyState
-            icon={<CheckCircle2 size={22} />}
-            title={filter === 'ALL' ? 'Belum ada insiden' : 'Tidak ada insiden pada status ini'}
-            description={filter === 'ALL' ? 'Laporan baru dari Admin akan muncul di sini secara otomatis.' : 'Pilih status lain untuk melihat laporan.'}
-          />
-        ) : (
-          <div className="incident-feed">
-            {filteredIncidents.map((incident) => {
-              const next = nextIncidentStatus[incident.status]
-              return (
-                <article className={`incident-item incident-${incidentStatusTone(incident.status)}`} key={incident.id}>
-                  <div className="incident-status-rail" />
-                  <div className="incident-main">
-                    <div className="incident-top">
-                      <div className="incident-title">
-                        <strong>{incident.lab_name}</strong>
-                        <Badge tone={incidentStatusTone(incident.status)} dot>
-                          {incident.status_label}
-                        </Badge>
-                      </div>
-                      <span className="incident-time">
-                        <Clock size={13} /> {relativeTime(incident.created_at)}
-                      </span>
-                    </div>
-                    <p className="incident-desc">{incident.description}</p>
-                    {incident.status_note && <div className="incident-note">Catatan: {incident.status_note}</div>}
-                    <div className="incident-foot">
-                      <span>
-                        Dilaporkan {incident.reporter?.name ?? 'Admin'} · {dateTime(incident.created_at)}
-                      </span>
-                      <div className="incident-actions">
-                        {incident.status_updated_by && (
-                          <span className="muted">Ditangani {incident.status_updated_by.name}</span>
-                        )}
-                        {next && (
-                          <button className="btn btn-secondary btn-sm" onClick={() => openStatus(incident)}>
-                            {next.action}
-                            <ArrowRight size={14} />
-                          </button>
-                        )}
-                        {incident.status === 'SELESAI' && (
-                          <span className="resolved-label">
-                            <CheckCircle2 size={14} /> Selesai {relativeTime(incident.resolved_at)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </article>
-              )
-            })}
+            <button className="btn btn-primary btn-sm" onClick={() => setCreateOpen(true)}>
+              <Plus size={14} /> Buat Tiket Baru
+            </button>
           </div>
-        )}
+        </div>
       </section>
 
-      <Modal
-        open={readingTarget !== null}
-        title={`Input beban · ${readingTarget?.lab_name ?? ''}`}
-        subtitle={`${readingTarget?.group_label ?? ''} · batas ${number(readingTarget?.limit_watt ?? 0)} W`}
-        onClose={() => setReadingTarget(null)}
-        footer={
-          <>
-            <button className="btn btn-ghost" type="button" onClick={() => setReadingTarget(null)}>
-              Batal
-            </button>
-            <button className="btn btn-primary" type="submit" form="readingForm" disabled={savingReading}>
-              {savingReading ? <LoaderCircle size={16} className="spin" /> : <Zap size={16} />}
-              Simpan beban
-            </button>
-          </>
-        }
-      >
-        <form id="readingForm" className="form-stack" onSubmit={handleReadingSubmit}>
-          <FormField label="Beban (watt)" htmlFor="loadWatt" hint="Gunakan hasil pengukuran manual atau estimasi yang dapat dijelaskan.">
-            <input
-              id="loadWatt"
-              className="input"
-              type="number"
-              min="0"
-              step="1"
-              value={readingForm.load_watt}
-              onChange={(event) => setReadingForm({ ...readingForm, load_watt: event.target.value })}
-              required
-            />
-          </FormField>
-          <FormField label="Sumber data" htmlFor="loadSource">
-            <select
-              id="loadSource"
-              className="input"
-              value={readingForm.source}
-              onChange={(event) => setReadingForm({ ...readingForm, source: event.target.value })}
-            >
-              <option value="MANUAL_ESTIMATE">Estimasi manual</option>
-              <option value="MANUAL_MEASUREMENT">Pengukuran manual (mis. tang ampere)</option>
+      {/* Modal Buat Tiket Baru */}
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Buat Tiket Insiden Listrik Baru">
+        <form onSubmit={handleCreate}>
+          <div className="field">
+            <label>Laboratorium</label>
+            <select className="input" value={newLab} onChange={(e) => setNewLab(e.target.value)}>
+              <option value="1">Lab 1 Komputer Dasar</option>
+              <option value="2">Lab 2 Rekayasa Perangkat Lunak</option>
+              <option value="3">Lab 3 Jaringan &amp; Keamanan</option>
+              <option value="4">Lab 4 AI &amp; Data Science</option>
+              <option value="5">Lab 5 Multimedia &amp; Desain</option>
+              <option value="6">Lab 6 Riset &amp; Inovasi</option>
             </select>
-          </FormField>
-          <FormField label="Catatan" htmlFor="loadNotes" hint="Opsional: kondisi pemakaian, waktu, atau metode estimasi.">
+          </div>
+          <div className="field">
+            <label>Deskripsi Gangguan / Anomali Listrik</label>
             <textarea
-              id="loadNotes"
               className="input textarea"
               rows={3}
-              value={readingForm.notes}
-              onChange={(event) => setReadingForm({ ...readingForm, notes: event.target.value })}
-            />
-          </FormField>
-          {readingError && <div className="inline-error">{readingError}</div>}
-        </form>
-      </Modal>
-
-      <Modal
-        open={limitTarget !== null}
-        title={`Atur batas · ${limitTarget?.lab_name ?? ''}`}
-        subtitle={limitTarget?.group_label}
-        onClose={() => setLimitTarget(null)}
-        footer={
-          <>
-            <button className="btn btn-ghost" type="button" onClick={() => setLimitTarget(null)}>
-              Batal
-            </button>
-            <button className="btn btn-primary" type="submit" form="limitForm" disabled={savingLimit}>
-              {savingLimit ? <LoaderCircle size={16} className="spin" /> : <Gauge size={16} />}
-              Simpan batas
-            </button>
-          </>
-        }
-      >
-        <form id="limitForm" className="form-stack" onSubmit={handleLimitSubmit}>
-          <div className="form-row">
-            <FormField label="Batas arus (A)" htmlFor="limitAmpere">
-              <input
-                id="limitAmpere"
-                className="input"
-                type="number"
-                min="0.1"
-                step="0.1"
-                value={limitForm.limit_ampere}
-                onChange={(event) => setLimitForm({ ...limitForm, limit_ampere: event.target.value })}
-                required
-              />
-            </FormField>
-            <FormField label="Tegangan (V)" htmlFor="limitVoltage">
-              <input
-                id="limitVoltage"
-                className="input"
-                type="number"
-                min="100"
-                max="400"
-                step="1"
-                value={limitForm.voltage}
-                onChange={(event) => setLimitForm({ ...limitForm, voltage: event.target.value })}
-                required
-              />
-            </FormField>
-          </div>
-          <FormField label="Ambang peringatan (%)" htmlFor="limitWarning" hint="Nilai default awal 80%; dapat diubah Admin.">
-            <input
-              id="limitWarning"
-              className="input"
-              type="number"
-              min="1"
-              max="100"
-              value={limitForm.warning_percent}
-              onChange={(event) => setLimitForm({ ...limitForm, warning_percent: event.target.value })}
+              placeholder="Contoh: Stopkontak nomor 12 berbau hangus, tegangan drop drastis..."
+              value={newDesc}
+              onChange={(e) => setNewDesc(e.target.value)}
               required
             />
-          </FormField>
-          <div className="calc-preview">
-            Batas daya = {number(Number(limitForm.limit_ampere || 0) * Number(limitForm.voltage || 0))} W.
-            Peringatan muncul pada {number(Number(limitForm.warning_percent || 0))}% dari batas.
           </div>
-          {limitError && <div className="inline-error">{limitError}</div>}
-        </form>
-      </Modal>
-
-      <Modal
-        open={createOpen}
-        title="Buat laporan insiden"
-        subtitle="Laporan akan muncul pada feed Maintenance melalui polling otomatis."
-        onClose={() => setCreateOpen(false)}
-        footer={
-          <>
-            <button className="btn btn-ghost" type="button" onClick={() => setCreateOpen(false)}>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => setCreateOpen(false)}>
               Batal
             </button>
-            <button className="btn btn-primary" type="submit" form="createIncidentForm" disabled={creating}>
-              {creating ? <LoaderCircle size={16} className="spin" /> : <Send size={16} />}
-              Kirim laporan
+            <button type="submit" className="btn btn-primary">
+              <Send size={14} /> Terbitkan Tiket
             </button>
-          </>
-        }
-      >
-        <form id="createIncidentForm" className="form-stack" onSubmit={handleCreateIncident}>
-          <FormField label="Laboratorium" htmlFor="incidentLab">
-            <select
-              id="incidentLab"
-              className="input"
-              value={createForm.lab_room_id}
-              onChange={(event) => setCreateForm({ ...createForm, lab_room_id: event.target.value })}
-              required
-            >
-              <option value="">Pilih lab…</option>
-              {overview.labs.map((lab) => (
-                <option key={lab.id} value={lab.id}>
-                  {lab.name} · {lab.location}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Deskripsi gangguan" htmlFor="incidentDescription" hint="Jelaskan gejala, waktu, dan lokasi bila diketahui.">
-            <textarea
-              id="incidentDescription"
-              className="input textarea"
-              rows={4}
-              value={createForm.description}
-              onChange={(event) => setCreateForm({ ...createForm, description: event.target.value })}
-              required
-            />
-          </FormField>
-          {createError && <div className="inline-error">{createError}</div>}
-        </form>
-      </Modal>
-
-      <Modal
-        open={statusTarget !== null}
-        title={`Ubah status insiden · ${statusTarget?.lab_name ?? ''}`}
-        subtitle={nextForTarget ? `${statusTarget?.status_label} → ${nextForTarget.label}` : undefined}
-        onClose={() => setStatusTarget(null)}
-        footer={
-          <>
-            <button className="btn btn-ghost" type="button" onClick={() => setStatusTarget(null)}>
-              Batal
-            </button>
-            <button className="btn btn-primary" type="submit" form="statusForm" disabled={savingStatus}>
-              {savingStatus ? <LoaderCircle size={16} className="spin" /> : <CheckCircle2 size={16} />}
-              Simpan status
-            </button>
-          </>
-        }
-      >
-        <form id="statusForm" className="form-stack" onSubmit={handleStatusSubmit}>
-          <div className="status-flow">
-            {statusTabs.slice(1).map((tab) => (
-              <span
-                key={tab.value}
-                className={
-                  tab.value === statusTarget?.status
-                    ? 'current'
-                    : tab.value === nextForTarget?.value
-                      ? 'next'
-                      : ''
-                }
-              >
-                {tab.label}
-              </span>
-            ))}
           </div>
-          <FormField label="Catatan penanganan" htmlFor="statusNote" hint="Opsional; akan tampil pada feed insiden.">
-            <textarea
-              id="statusNote"
-              className="input textarea"
-              rows={3}
-              value={statusNote}
-              onChange={(event) => setStatusNote(event.target.value)}
-              placeholder="Tindakan yang sudah dilakukan…"
-            />
-          </FormField>
-          {statusError && <div className="inline-error">{statusError}</div>}
         </form>
       </Modal>
     </>

@@ -7,7 +7,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Search,
   ShieldCheck,
   UserCheck,
   UserPlus,
@@ -66,7 +65,6 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('ALL')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
 
@@ -105,15 +103,13 @@ export default function UsersPage() {
   }, [users])
 
   const filteredUsers = useMemo(() => {
-    const query = search.trim().toLowerCase()
     return users.filter((user) => {
       if (roleFilter !== 'ALL' && user.role !== roleFilter) return false
       if (statusFilter === 'ACTIVE' && !user.is_active) return false
       if (statusFilter === 'INACTIVE' && user.is_active) return false
-      if (!query) return true
-      return user.name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query)
+      return true
     })
-  }, [users, search, roleFilter, statusFilter])
+  }, [users, roleFilter, statusFilter])
 
   function openCreate() {
     setEditing(null)
@@ -254,16 +250,7 @@ export default function UsersPage() {
           </Badge>
         </div>
 
-        <div className="toolbar toolbar-wrap">
-          <div className="input-icon-wrap toolbar-search">
-            <Search size={15} />
-            <input
-              className="input input-sm"
-              placeholder="Cari nama atau email…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
+        <div className="toolbar toolbar-wrap" style={{ justifyContent: 'flex-end' }}>
           <div className="toolbar-filters">
             <select
               className="input input-sm"

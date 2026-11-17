@@ -2,74 +2,73 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
-  ClipboardList,
+  Bell,
+  Check,
   Eye,
   EyeOff,
   Gauge,
-  GraduationCap,
-  Leaf,
-  LoaderCircle,
   Lock,
   Mail,
+  Monitor,
   ShieldAlert,
-  ShieldCheck,
-  UserCheck,
-  Wrench,
+  Sliders,
+  Sparkles,
   Zap,
 } from 'lucide-react'
 import { roleHome, useAuth } from '../auth/AuthContext'
 import { firstError } from '../lib/api'
 
-interface DemoUser {
+interface DemoAccount {
   role: string
   name: string
   email: string
-  badgeTone: string
-  icon: typeof GraduationCap
+  title: string
   desc: string
+  code: string
 }
 
-const demoAccounts: DemoUser[] = [
+const demoAccounts: DemoAccount[] = [
   {
     role: 'ADMIN',
     name: 'Dosen Admin',
     email: 'admin@unklab.ac.id',
-    badgeTone: 'accent',
-    icon: GraduationCap,
-    desc: 'Kelola master data, pantau 6 lab, laporkan insiden',
+    title: 'Dosen Admin',
+    desc: 'Hak Akses Penuh',
+    code: 'L-02 Telemetri & L-06 RBAC',
   },
   {
     role: 'AUDITOR',
     name: 'Auditor Lapangan',
     email: 'auditor@unklab.ac.id',
-    badgeTone: 'blue',
-    icon: ClipboardList,
-    desc: 'Audit cepat PC 1-6 lab dengan smartphone/tablet',
+    title: 'Auditor Lapangan',
+    desc: 'Inspeksi & QR Audit',
+    code: 'L-03 Form Input Lapangan',
   },
   {
     role: 'MAINTENANCE',
     name: 'Facility Maintenance',
     email: 'maintenance@unklab.ac.id',
-    badgeTone: 'amber',
-    icon: Wrench,
-    desc: 'Pantau beban MCB 10A/40A & live feed insiden',
+    title: 'Facility Maint.',
+    desc: 'Beban MCB & Alert',
+    code: 'L-04 Mitigasi Trip & Fuse',
   },
   {
     role: 'PIMPINAN',
     name: 'Pimpinan Kampus',
     email: 'pimpinan@unklab.ac.id',
-    badgeTone: 'purple',
-    icon: UserCheck,
-    desc: 'Executive summary, tren biaya PLN & cetak PDF',
+    title: 'Pimpinan Kampus',
+    desc: 'Ringkasan Eksekutif',
+    code: 'L-05 Biaya Listrik & ESG',
   },
 ]
 
 export default function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('dosen.admin@unklab.ac.id')
+  const [password, setPassword] = useState('Vampir#2026')
   const [showPassword, setShowPassword] = useState(false)
+  const [remember, setRemember] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -87,101 +86,178 @@ export default function LoginPage() {
     }
   }
 
-  function handleDemoSelect(account: DemoUser) {
+  async function handleDemoSelect(account: DemoAccount) {
     setEmail(account.email)
     setPassword('Vampir#2026')
     setError('')
+    setSubmitting(true)
+    try {
+      const user = await login(account.email, 'Vampir#2026')
+      navigate(roleHome[user.role], { replace: true })
+    } catch (caught) {
+      setError(firstError(caught))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
     <div className="login-screen">
+      {/* Top Telemetry Institutional Bar (As in Stitch Screen 1) */}
+      <header className="topbar">
+        <div className="topbar-left">
+          <span className="campus-pill">
+            <span className="dot" /> GREEN CAMPUS UNKLAB
+          </span>
+          <span className="topbar-pipe">|</span>
+          <span className="telemetry-status">Grid Telemetry Active (220.4V avg)</span>
+        </div>
+
+        <div className="topbar-right">
+          <button className="notif-bell" aria-label="Notifikasi">
+            <Bell size={16} />
+            <span className="notif-dot" />
+          </button>
+          <div className="user-profile-widget">
+            <div className="user-profile-copy">
+              <div className="user-profile-name">Dosen Admin</div>
+              <div className="user-profile-dept">Fakultas Ilmu Komputer</div>
+            </div>
+            <div className="user-avatar-badge">DA</div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Login Viewport */}
       <div className="login-layout">
-        {/* Left Branding Panel */}
-        <aside className="login-intro">
-          <div className="login-brand">
-            <div className="brand-mark">
+        {/* Left Branding & Live Wave Telemetry */}
+        <section className="login-intro">
+          {/* Tag pills */}
+          <div className="login-tag-row">
+            <span className="login-tag">GREEN CAMPUS INITIATIVE</span>
+            <span className="login-tag">FILKOM • UNKLAB</span>
+            <span className="login-tag online">
+              <span className="badge-dot" /> Grid Online 220V
+            </span>
+          </div>
+
+          {/* Logo & Platform Name */}
+          <div className="login-brand-stitch">
+            <div className="login-brand-icon">
               <Zap size={24} fill="currentColor" strokeWidth={0} />
             </div>
-            <div>
-              <strong>VAMPIR MONITOR</strong>
-              <span>Audit Daya Standby · 6 Lab Komputer</span>
+            <div className="login-brand-text">
+              <h2>VampireMonitor UNKLAB</h2>
+              <p>Sistem Telemetri Konsumsi Energi &amp; Deteksi Beban Siluman</p>
             </div>
           </div>
 
-          <div className="login-copy">
-            <div className="eyebrow">Universitas Klabat (UNKLAB)</div>
-            <h1>Deteksi & Kendalikan Kebocoran Energi Lab.</h1>
-            <p>
-              Platform terpusat untuk audit daya standby 210–240 PC, pengawasan beban MCB panel 10 A &amp; 40 A,
-              serta evaluasi efisiensi biaya menuju Green Campus.
-            </p>
+          {/* Headline */}
+          <h1 className="login-headline">
+            Pantau &amp; Hentikan Pemborosan Listrik Standby di{' '}
+            <span className="mint">6 Lab Komputer</span>
+          </h1>
 
-            <div className="login-features">
-              <div className="login-feature-item">
-                <span className="login-feature-icon">
-                  <ShieldCheck size={16} />
-                </span>
-                <span>
-                  <strong>Cakupan 6 Laboratorium</strong>
-                  <small>Lab Komputer 1 sampai Lab Komputer 6 terpantau terpusat</small>
-                </span>
-              </div>
-              <div className="login-feature-item">
-                <span className="login-feature-icon">
-                  <ClipboardList size={16} />
-                </span>
-                <span>
-                  <strong>Audit Cepat ≤ 1,5 Detik</strong>
-                  <small>Fast-input dropdown, nomor PC otomatis, penanda unit rusak</small>
-                </span>
-              </div>
-              <div className="login-feature-item">
-                <span className="login-feature-icon">
-                  <Gauge size={16} />
-                </span>
-                <span>
-                  <strong>Peringatan Beban Panel MCB</strong>
-                  <small>Grup Stopkontak 10 A (2.200 W) &amp; AC 40 A (8.800 W)</small>
-                </span>
-              </div>
-              <div className="login-feature-item">
-                <span className="login-feature-icon">
-                  <Leaf size={16} />
-                </span>
-                <span>
-                  <strong>Metrik Green Campus &amp; PDF</strong>
-                  <small>Estimasi pemborosan Rp &amp; emisi kgCO₂e dengan laporan resmi</small>
-                </span>
-              </div>
+          <p className="login-subhead">
+            Sistem telemetri presisi tinggi untuk memitigasi konsumsi parasitik (vampire draw),
+            verifikasi integritas 240 unit workstation, dan mencegah trip MCB fasa tunggal secara
+            real-time pada Gedung Kuliah Terpadu Lt. 3.
+          </p>
+
+          {/* Live Wave Chart Box */}
+          <div className="login-wave-tile">
+            <div className="login-wave-header">
+              <span className="login-wave-title">
+                <span className="badge-dot" style={{ backgroundColor: '#10b981' }} />
+                POLA BEBAN VAMPIR HARIAN (00:00 - 06:00 WITA)
+              </span>
+              <span className="login-wave-val">
+                Standby Aktif: <strong>4.82 kW</strong>
+              </span>
+            </div>
+
+            {/* SVG Wave graphic with anomaly dot */}
+            <svg
+              className="login-wave-chart"
+              viewBox="0 0 500 70"
+              preserveAspectRatio="none"
+              fill="none"
+            >
+              <defs>
+                <linearGradient id="waveGlow" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0.0" />
+                </linearGradient>
+              </defs>
+              <path
+                d="M 0 50 Q 70 50, 120 45 T 240 40 T 310 18 T 370 12 T 420 40 T 500 48 L 500 70 L 0 70 Z"
+                fill="url(#waveGlow)"
+              />
+              <path
+                d="M 0 50 Q 70 50, 120 45 T 240 40 T 310 18 T 370 12 T 420 40 T 500 48"
+                stroke="#38bdf8"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              />
+              {/* Anomaly circle at peak */}
+              <circle cx="340" cy="22" r="5" fill="#f97316" stroke="#ffffff" strokeWidth="2" />
+            </svg>
+
+            <div className="login-wave-footer">
+              <span>Lab 301-306 Total Idle State</span>
+              <span style={{ color: '#10b981' }}>Anomali Terkendali (92% Normal)</span>
             </div>
           </div>
 
-          <div className="login-campus">
-            Fakultas Ilmu Komputer · Universitas Klabat, Airmadidi, Manado
-          </div>
-        </aside>
+          {/* 3 Metric Cards Row */}
+          <div className="login-tri-cards">
+            <div className="login-tri-card blue">
+              <div className="tri-card-label">INVENTARIS UNIT</div>
+              <div className="tri-card-val">240 <span style={{ fontSize: '11px', color: '#94a3b8' }}>PC</span></div>
+              <div className="tri-card-sub">6 Lab Terpadu Lt. 3</div>
+            </div>
 
-        {/* Right Form Panel */}
-        <section className="login-panel">
-          <div className="login-panel-head">
-            <span className="login-pill">Sistem Masuk Aman (RBAC)</span>
-            <h2>Masuk ke Akun Anda</h2>
-            <p>Silakan masukkan kredensial akun kampus yang telah terdaftar.</p>
-          </div>
+            <div className="login-tri-card amber">
+              <div className="tri-card-label">BATAS BEBAN MCB</div>
+              <div className="tri-card-val">10A <span style={{ fontSize: '12px', color: '#64748b' }}>/ 40A</span></div>
+              <div className="tri-card-sub">2.2kW PC • 8.8kW AC</div>
+            </div>
 
-          <form onSubmit={handleSubmit} className="login-form">
+            <div className="login-tri-card green">
+              <div className="tri-card-label">TARGET EFISIENSI</div>
+              <div className="tri-card-val" style={{ color: '#4edea3' }}>-6.5%</div>
+              <div className="tri-card-sub">Vampire Draw Reduksi</div>
+            </div>
+          </div>
+        </section>
+
+        {/* Right Login Panel */}
+        <section className="login-panel-stitch">
+          <div className="login-card-head">
+            <h3>Masuk ke Portal Audit</h3>
+            <span className="badge badge-success">
+              <span className="badge-dot" /> SSO Ready
+            </span>
+          </div>
+          <p className="login-card-desc">
+            Autentikasi akun institusi UNKLAB atau pilih simulasi peran operasional.
+          </p>
+
+          <form onSubmit={handleSubmit}>
             <div className="field">
-              <label htmlFor="loginEmail">Email Pengguna</label>
+              <div className="field-label-row">
+                <label htmlFor="loginEmail">EMAIL / NIM / NIDN</label>
+                <span className="field-hint-text">UNKLAB Single Sign-On</span>
+              </div>
               <div className="input-icon-wrap">
                 <Mail size={16} />
                 <input
                   id="loginEmail"
                   className="input"
                   type="email"
-                  autoComplete="username"
-                  placeholder="contoh: admin@unklab.ac.id"
+                  placeholder="dosen.admin@unklab.ac.id"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                 />
               </div>
@@ -189,8 +265,10 @@ export default function LoginPage() {
 
             <div className="field">
               <div className="field-label-row">
-                <label htmlFor="loginPassword">Kata Sandi</label>
-                <span className="field-hint-text">Standar demo: Vampir#2026</span>
+                <label htmlFor="loginPassword">KATA SANDI</label>
+                <a href="#forgot" className="field-hint-text" style={{ color: '#38bdf8' }} onClick={(e) => e.preventDefault()}>
+                  Lupa Sandi?
+                </a>
               </div>
               <div className="input-icon-wrap">
                 <Lock size={16} />
@@ -198,71 +276,79 @@ export default function LoginPage() {
                   id="loginPassword"
                   className="input"
                   type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
                   placeholder="Masukkan kata sandi"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   required
                 />
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() => setShowPassword((value) => !value)}
-                  aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label="Toggle password visibility"
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
 
+            <div className="login-remember-row">
+              <label className="login-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                  style={{ accentColor: '#10b981' }}
+                />
+                <span>Ingat sesi saya di terminal ini</span>
+              </label>
+              <span className="mono" style={{ fontSize: '11px', color: '#64748b' }}>TLS 1.3</span>
+            </div>
+
             {error && (
-              <div className="login-error" role="alert">
+              <div className="inline-error" style={{ marginBottom: '14px' }}>
                 <ShieldAlert size={16} />
                 <span>{error}</span>
               </div>
             )}
 
-            <button className="btn btn-primary login-submit" type="submit" disabled={submitting}>
-              {submitting ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}
-              <span>{submitting ? 'Memverifikasi identitas…' : 'Masuk ke Sistem'}</span>
+            <button type="submit" className="login-submit-btn" disabled={submitting}>
+              <ArrowRight size={18} />
+              <span>{submitting ? 'Memverifikasi Kredensial...' : 'Masuk ke Sistem Telemetri'}</span>
             </button>
           </form>
 
-          {/* Quick Demo Access Grid */}
-          <div className="demo-section">
-            <div className="demo-header">
-              <span>Pilih Cepat Akun Demo (1-Klik):</span>
-            </div>
-            <div className="demo-cards-grid">
-              {demoAccounts.map((account) => {
-                const Icon = account.icon
-                const isSelected = email === account.email
-                return (
-                  <button
-                    key={account.email}
-                    type="button"
-                    className={`demo-card ${isSelected ? 'selected' : ''}`}
-                    onClick={() => handleDemoSelect(account)}
-                  >
-                    <div className="demo-card-top">
-                      <div className={`demo-avatar tone-${account.badgeTone}`}>
-                        <Icon size={16} />
-                      </div>
-                      <span className="demo-role-badge">{account.role}</span>
-                    </div>
-                    <div className="demo-card-body">
-                      <strong>{account.name}</strong>
-                      <small>{account.desc}</small>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
+          {/* RBAC Simulation Section */}
+          <div className="rbac-section-title">
+            <span>AKSES CEPAT SIMULASI PERAN (RBAC)</span>
           </div>
 
-          <div className="login-footnote">
-            <strong>Proteksi Akses Berlapis:</strong> Akun dinonaktifkan (<code>is_active = false</code>) akan
-            ditolak sistem secara otomatis. Hak akses menu diatur sepenuhnya melalui RBAC server-side.
+          <div className="rbac-demo-grid">
+            {demoAccounts.map((acc) => {
+              const isSelected = email === acc.email
+              return (
+                <button
+                  key={acc.email}
+                  type="button"
+                  className={`rbac-demo-card ${isSelected ? 'selected' : ''}`}
+                  onClick={() => handleDemoSelect(acc)}
+                >
+                  <div className="rbac-card-title">
+                    <span>{acc.title}</span>
+                    <ArrowRight size={13} />
+                  </div>
+                  <div className="rbac-card-desc">{acc.desc}</div>
+                  <div className="rbac-card-sub">{acc.code}</div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="login-footer-copy">
+            <div>© 2025 Universitas Klabat — Green Campus Telemetry Protocol v2.4</div>
+            <div style={{ color: '#4b535d', marginTop: '2px' }}>
+              Fakultas Ilmu Komputer • Smart Energy Management Unit
+            </div>
           </div>
         </section>
       </div>

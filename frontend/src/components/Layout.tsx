@@ -2,17 +2,14 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   BarChart3,
+  Bell,
   ClipboardList,
   Gauge,
   LayoutDashboard,
   LogOut,
-  Menu,
   Monitor,
   Settings,
-  ShieldCheck,
   Users,
-  X,
-  Zap,
 } from 'lucide-react'
 import { roleLabels, useAuth } from '../auth/AuthContext'
 import { initials } from '../lib/format'
@@ -23,175 +20,108 @@ interface NavItem {
   label: string
   short: string
   icon: typeof LayoutDashboard
+  code?: string
 }
 
-const mainNav: Record<Role, NavItem[]> = {
+const roleNavs: Record<Role, NavItem[]> = {
   ADMIN: [
-    { to: '/dashboard', label: 'Ringkasan lab', short: 'Dasbor', icon: LayoutDashboard },
-    { to: '/audit', label: 'Audit perangkat', short: 'Audit', icon: ClipboardList },
-    { to: '/panels', label: 'Panel & insiden', short: 'Panel', icon: Gauge },
-    { to: '/executive', label: 'Ringkasan eksekutif', short: 'Eksekutif', icon: BarChart3 },
+    { to: '/dashboard', label: 'Dasbor Utama & 6 Lab', short: 'Dasbor', icon: LayoutDashboard, code: 'L-02' },
+    { to: '/audit', label: 'Form Audit Lapangan', short: 'Audit', icon: ClipboardList, code: 'L-03' },
+    { to: '/panels', label: 'Panel MCB & Insiden', short: 'Panel', icon: Gauge, code: 'L-04' },
+    { to: '/executive', label: 'Dashboard Eksekutif', short: 'Eksekutif', icon: BarChart3, code: 'L-05' },
+    { to: '/specs', label: 'Master Inventaris PC', short: 'Master', icon: Monitor, code: 'L-06' },
+    { to: '/users', label: 'Pengguna & RBAC', short: 'Pengguna', icon: Users },
+    { to: '/settings', label: 'Pengaturan Sistem', short: 'Setelan', icon: Settings },
   ],
-  AUDITOR: [{ to: '/audit', label: 'Audit perangkat', short: 'Audit', icon: ClipboardList }],
-  MAINTENANCE: [{ to: '/panels', label: 'Panel & insiden', short: 'Panel', icon: Gauge }],
-  PIMPINAN: [{ to: '/executive', label: 'Ringkasan eksekutif', short: 'Eksekutif', icon: BarChart3 }],
-}
-
-const adminNav: NavItem[] = [
-  { to: '/specs', label: 'Master perangkat', short: 'Master', icon: Monitor },
-  { to: '/users', label: 'Pengguna & peran', short: 'Pengguna', icon: Users },
-  { to: '/settings', label: 'Pengaturan', short: 'Setelan', icon: Settings },
-]
-
-const pageTitles: Record<string, { title: string; eyebrow: string }> = {
-  '/dashboard': { title: 'Ringkasan lab', eyebrow: 'Pemantauan energi' },
-  '/audit': { title: 'Audit perangkat', eyebrow: 'Inventaris & standby' },
-  '/panels': { title: 'Panel & insiden', eyebrow: 'Operasional fasilitas' },
-  '/executive': { title: 'Ringkasan eksekutif', eyebrow: 'Laporan pimpinan' },
-  '/specs': { title: 'Master perangkat', eyebrow: 'Administrasi data' },
-  '/users': { title: 'Pengguna & peran', eyebrow: 'Administrasi akses' },
-  '/settings': { title: 'Pengaturan', eyebrow: 'Parameter sistem' },
+  AUDITOR: [
+    { to: '/audit', label: 'Form Audit Lapangan', short: 'Audit', icon: ClipboardList, code: 'L-03' },
+  ],
+  MAINTENANCE: [
+    { to: '/panels', label: 'Panel MCB & Insiden', short: 'Panel', icon: Gauge, code: 'L-04' },
+  ],
+  PIMPINAN: [
+    { to: '/executive', label: 'Dashboard Eksekutif', short: 'Eksekutif', icon: BarChart3, code: 'L-05' },
+  ],
 }
 
 export default function Layout() {
   const { user, logout } = useAuth()
   const location = useLocation()
-  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
-    setMenuOpen(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [location.pathname])
 
   if (!user) return null
 
-  const nav = mainNav[user.role]
-  const extraNav = user.role === 'ADMIN' ? adminNav : []
-  const meta = pageTitles[location.pathname] ?? pageTitles['/dashboard']
-  const today = new Intl.DateTimeFormat('id-ID', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date())
-
-  const navLink = (item: NavItem) => {
-    const Icon = item.icon
-    return (
-      <NavLink
-        key={item.to}
-        to={item.to}
-        className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-        onClick={() => setMenuOpen(false)}
-      >
-        <Icon size={18} strokeWidth={1.8} />
-        <span>{item.label}</span>
-      </NavLink>
-    )
-  }
+  const nav = roleNavs[user.role]
 
   return (
     <div className="app-shell">
-      <div className={`sidebar-scrim ${menuOpen ? 'visible' : ''}`} onClick={() => setMenuOpen(false)} />
+      {/* Top Institutional Header */}
+      <header className="topbar">
+        <div className="topbar-left">
+          <span className="campus-pill">
+            <span className="dot" /> GREEN CAMPUS UNKLAB
+          </span>
+          <span className="topbar-pipe">|</span>
+          <span className="telemetry-status">Grid Telemetry Active (220.4V avg)</span>
+        </div>
 
-      <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
-        <div className="sidebar-brand">
-          <div className="brand-mark">
-            <Zap size={21} fill="currentColor" strokeWidth={0} />
+        {/* User & Role Status */}
+        <div className="topbar-right">
+          <button className="notif-bell" aria-label="Notifikasi Sistem" title="5 Insiden Aktif">
+            <Bell size={16} />
+            <span className="notif-dot" />
+          </button>
+
+          <div className="user-profile-widget">
+            <div className="user-profile-copy">
+              <div className="user-profile-name">{user.name}</div>
+              <div className="user-profile-dept">Fakultas Ilmu Komputer</div>
+            </div>
+            <div className="user-avatar-badge" title={roleLabels[user.role]}>
+              {initials(user.name)}
+            </div>
           </div>
-          <div>
-            <div className="brand-name">vampir</div>
-            <div className="brand-sub">monitor energi lab</div>
-          </div>
-          <button className="icon-btn sidebar-close" onClick={() => setMenuOpen(false)} aria-label="Tutup navigasi">
-            <X size={18} />
+
+          <button
+            className="logout-mini-btn"
+            onClick={() => void logout()}
+            aria-label="Keluar dari sistem"
+            title="Keluar / Ganti Akun"
+          >
+            <LogOut size={16} />
           </button>
         </div>
+      </header>
 
-        <div className="nav-group-label">Menu utama</div>
-        <nav className="nav-list">{nav.map(navLink)}</nav>
-
-        {extraNav.length > 0 && (
-          <>
-            <div className="nav-separator" />
-            <div className="nav-group-label">Pengaturan</div>
-            <nav className="nav-list">{extraNav.map(navLink)}</nav>
-          </>
-        )}
-
-        <div className="sidebar-foot">
-          <div className="campus-card">
-            <div className="campus-card-label">Lingkup pemantauan</div>
-            <div className="campus-card-name">Universitas Klabat</div>
-            <div className="campus-card-meta">
-              <span className="dot" />6 laboratorium komputer
-            </div>
-          </div>
-
-          <div className="profile-card">
-            <div className="avatar">{initials(user.name)}</div>
-            <div className="profile-copy">
-              <div className="profile-name">{user.name}</div>
-              <div className="profile-role">{roleLabels[user.role]}</div>
-            </div>
-            <button className="icon-btn profile-logout" onClick={() => void logout()} aria-label="Keluar dari sistem">
-              <LogOut size={16} />
-            </button>
-          </div>
+      {/* Secondary Horizontal Subnav Navigation */}
+      <nav className="subnav" aria-label="Navigasi Telemetri Utama">
+        <div className="subnav-tabs">
+          {nav.map((item) => {
+            const Icon = item.icon
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) => `subnav-link ${isActive ? 'active' : ''}`}
+              >
+                <Icon size={15} />
+                <span>{item.label}</span>
+                {item.code && <span className="subnav-badge">{item.code}</span>}
+              </NavLink>
+            )
+          })}
         </div>
-      </aside>
+      </nav>
 
+      {/* Main Content Area */}
       <main className="main">
-        <header className="topbar">
-          <div className="topbar-left">
-            <button className="icon-btn mobile-menu" onClick={() => setMenuOpen(true)} aria-label="Buka navigasi">
-              <Menu size={19} />
-            </button>
-            <div className="breadcrumb">
-              <span className="breadcrumb-muted">{meta.eyebrow}</span>
-              <span className="breadcrumb-sep">/</span>
-              <strong>{meta.title}</strong>
-            </div>
-          </div>
-          <div className="topbar-right">
-            <span className="topbar-date">{today}</span>
-            <span className="role-pill">
-              <ShieldCheck size={13} />
-              {roleLabels[user.role]}
-            </span>
-          </div>
-        </header>
-
         <div className="page">
           <Outlet />
         </div>
       </main>
-
-      <nav className="mobile-nav" aria-label="Navigasi utama">
-        {nav.map((item) => {
-          const Icon = item.icon
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => `mobile-nav-link ${isActive ? 'active' : ''}`}
-              onClick={() => setMenuOpen(false)}
-            >
-              <Icon size={20} strokeWidth={1.8} />
-              <span>{item.short}</span>
-            </NavLink>
-          )
-        })}
-        <button
-          type="button"
-          className="mobile-nav-link mobile-nav-menu"
-          onClick={() => setMenuOpen(true)}
-          aria-label="Buka menu lengkap"
-        >
-          <Menu size={20} strokeWidth={1.8} />
-          <span>Menu</span>
-        </button>
-      </nav>
     </div>
   )
 }

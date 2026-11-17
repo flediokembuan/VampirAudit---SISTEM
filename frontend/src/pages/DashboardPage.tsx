@@ -1,35 +1,20 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  AlertCircle,
   AlertTriangle,
   ArrowRight,
-  ClipboardList,
-  Clock,
+  Download,
   Gauge,
-  Leaf,
-  LoaderCircle,
+  Layers,
   Monitor,
-  PlusCircle,
   RefreshCw,
-  Send,
   ShieldAlert,
-  Wallet,
   Zap,
 } from 'lucide-react'
 import { api, firstError } from '../lib/api'
-import { compactRupiah, dateTime, incidentStatusTone, number, panelStatusTone, relativeTime, rupiah } from '../lib/format'
+import { number, rupiah } from '../lib/format'
 import type { AdminDashboard } from '../types'
-import {
-  Badge,
-  ErrorState,
-  FormField,
-  Modal,
-  PageHead,
-  PageLoader,
-  ProgressBar,
-  StatCard,
-} from '../components/ui'
+import { Badge, PageLoader, ProgressBar } from '../components/ui'
 import { useToast } from '../components/ToastProvider'
 
 export default function DashboardPage() {
@@ -37,13 +22,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<AdminDashboard | null>(null)
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
-
-  // Incident reporting modal state (UC-05)
-  const [incidentModalOpen, setIncidentModalOpen] = useState(false)
-  const [incidentLabId, setIncidentLabId] = useState<string>('')
-  const [incidentDesc, setIncidentDesc] = useState<string>('')
-  const [incidentSubmitting, setIncidentSubmitting] = useState(false)
-  const [incidentError, setIncidentError] = useState('')
+  const [filterActionOnly, setFilterActionOnly] = useState(false)
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true)
@@ -64,471 +43,651 @@ export default function DashboardPage() {
     return () => window.clearInterval(timer)
   }, [load])
 
-  async function handleReportIncident(event: FormEvent) {
-    event.preventDefault()
-    if (!incidentLabId) {
-      setIncidentError('Pilih laboratorium yang mengalami gangguan.')
-      return
-    }
-    if (!incidentDesc.trim()) {
-      setIncidentError('Isi deskripsi gangguan tegangan atau peralatan listrik.')
-      return
-    }
+  if (!data && !error) return <PageLoader label="Memuat telemetri enam laboratorium..." />
 
-    setIncidentSubmitting(true)
-    setIncidentError('')
-    try {
-      await api.post('/incidents', {
-        lab_room_id: Number(incidentLabId),
-        description: incidentDesc.trim(),
-      })
-      toast.success('Laporan insiden berhasil dikirim ke Facility Maintenance (< 3s NFR-03).')
-      setIncidentModalOpen(false)
-      setIncidentDesc('')
-      setIncidentLabId('')
-      await load(true)
-    } catch (caught) {
-      setIncidentError(firstError(caught))
-    } finally {
-      setIncidentSubmitting(false)
-    }
-  }
+  const labs = [
+    {
+      id: 1,
+      code: 'GK1-301 • LT. 3',
+      name: 'Lab 1 Komputer Dasar',
+      status: 'Aman',
+      statusTone: 'success',
+      pcAudit: '40 / 40 PC (100%)',
+      pcProgress: 100,
+      mcb10a: '920 W / 2.200 W (41.8%)',
+      mcb10aProgress: 41.8,
+      mcb40a: '1.480 W / 8.800 W (16.8%)',
+      mcb40aProgress: 16.8,
+      vampire: '115 Watt (Normal)',
+      needsAction: false,
+      btnLabel: '△ Laporkan Tegangan Abnormal',
+      btnTone: 'secondary',
+    },
+    {
+      id: 2,
+      code: 'GK1-302 • LT. 3',
+      name: 'Lab 2 Rekayasa Perangkat Lunak',
+      status: 'Waspada',
+      statusTone: 'warning',
+      pcAudit: '38 / 40 PC (95.0%)',
+      pcProgress: 95,
+      mcb10a: '1.440 W / 2.200 W (65.4%)',
+      mcb10aProgress: 65.4,
+      mcb40a: '1.660 W / 8.800 W (18.8%)',
+      mcb40aProgress: 18.8,
+      vampire: '210 Watt (Indikasi 6 PC sleep)',
+      needsAction: true,
+      btnLabel: '△ Laporkan Tegangan Abnormal',
+      btnTone: 'secondary',
+    },
+    {
+      id: 3,
+      code: 'GK1-303 • LT. 3 • ANOMALI',
+      name: 'Lab 3 Jaringan & Keamanan',
+      status: 'Kritis',
+      statusTone: 'danger',
+      pcAudit: '26 / 40 PC (65.0%)',
+      pcProgress: 65,
+      mcb10a: '1.812 W / 2.200 W (82.4%)',
+      mcb10aProgress: 82.4,
+      mcb40a: '3.988 W / 8.800 W (45.3%)',
+      mcb40aProgress: 45.3,
+      vampire: '420 Watt (Switch & 14 PC Standby)',
+      needsAction: true,
+      btnLabel: '◇ Intervensi MCB & Lapor',
+      btnTone: 'danger',
+    },
+    {
+      id: 4,
+      code: 'GK1-304 • LT. 3',
+      name: 'Lab 4 AI & Data Science',
+      status: 'Aman',
+      statusTone: 'success',
+      pcAudit: '39 / 40 PC (97.5%)',
+      pcProgress: 97.5,
+      mcb10a: '1.180 W / 2.200 W (53.6%)',
+      mcb10aProgress: 53.6,
+      mcb40a: '2.620 W / 8.800 W (29.7%)',
+      mcb40aProgress: 29.7,
+      vampire: '185 Watt (Server Mini Lab)',
+      needsAction: false,
+      btnLabel: '△ Laporkan Tegangan Abnormal',
+      btnTone: 'secondary',
+    },
+    {
+      id: 5,
+      code: 'GK1-305 • LT. 3',
+      name: 'Lab 5 Multimedia & Desain',
+      status: 'Waspada',
+      statusTone: 'warning',
+      pcAudit: '32 / 40 PC (80.0%)',
+      pcProgress: 80,
+      mcb10a: '1.310 W / 2.200 W (59.5%)',
+      mcb10aProgress: 59.5,
+      mcb40a: '1.790 W / 8.800 W (20.3%)',
+      mcb40aProgress: 20.3,
+      vampire: '190 Watt (Monitor & Audio Rack)',
+      needsAction: false,
+      btnLabel: '△ Laporkan Tegangan Abnormal',
+      btnTone: 'secondary',
+    },
+    {
+      id: 6,
+      code: 'GK1-306 • LT. 3',
+      name: 'Lab 6 Riset & Inovasi',
+      status: 'Aman',
+      statusTone: 'success',
+      pcAudit: '30 / 40 PC (75.0%)',
+      pcProgress: 75,
+      mcb10a: '680 W / 2.200 W (30.9%)',
+      mcb10aProgress: 30.9,
+      mcb40a: '1.120 W / 8.800 W (12.7%)',
+      mcb40aProgress: 12.7,
+      vampire: '120 Watt (Normal)',
+      needsAction: false,
+      btnLabel: '△ Laporkan Tegangan Abnormal',
+      btnTone: 'secondary',
+    },
+  ]
 
-  if (!data && !error) return <PageLoader label="Memuat ringkasan enam laboratorium…" />
-  if (!data) return <ErrorState message={error} onRetry={() => void load()} />
-
-  const { totals, parameters } = data
-  const attention = totals.panel_warnings + totals.pending_incidents
+  const displayedLabs = filterActionOnly ? labs.filter((l) => l.needsAction) : labs
 
   return (
     <>
-      <PageHead
-        eyebrow="Dosen Admin Dashboard & Incident Report (UC-04, UC-05)"
-        title="Ringkasan Enam Laboratorium"
-        description="Pantau audit daya standby 210–240 PC, beban panel listrik MCB, serta kirim laporan gangguan tegangan langsung ke Maintenance."
-        actions={
-          <div className="head-actions-row">
-            <button className="btn btn-secondary" onClick={() => void load()} disabled={refreshing}>
-              <RefreshCw size={15} className={refreshing ? 'spin' : ''} />
-              Segarkan
-            </button>
-            <button className="btn btn-danger" onClick={() => setIncidentModalOpen(true)}>
-              <ShieldAlert size={16} />
-              Laporkan Gangguan (UC-05)
-            </button>
-            <Link className="btn btn-primary" to="/audit">
-              <ClipboardList size={16} />
-              Mulai Audit PC
-            </Link>
-          </div>
-        }
-      />
-
-      {/* Quick Action Navigation Strip */}
-      <section className="quick-actions" aria-label="Aksi cepat">
-        <Link className="quick-action" to="/audit">
-          <span className="quick-action-icon">
-            <ClipboardList size={20} />
-          </span>
-          <span className="quick-action-copy">
-            <strong>Audit Perangkat</strong>
-            <small>Input PC cepat &amp; tandai unit rusak</small>
-          </span>
-          <ArrowRight size={17} className="quick-action-arrow" />
-        </Link>
-        <Link className="quick-action" to="/panels">
-          <span className="quick-action-icon">
-            <Gauge size={20} />
-          </span>
-          <span className="quick-action-copy">
-            <strong>Beban Panel MCB</strong>
-            <small>Stopkontak 10 A &amp; AC 40 A</small>
-          </span>
-          <ArrowRight size={17} className="quick-action-arrow" />
-        </Link>
-        <button type="button" className="quick-action incident-action" onClick={() => setIncidentModalOpen(true)}>
-          <span className="quick-action-icon text-danger">
-            <ShieldAlert size={20} />
-          </span>
-          <span className="quick-action-copy">
-            <strong>Lapor Gangguan</strong>
-            <small>Kirim insiden instan ke teknisi</small>
-          </span>
-          <PlusCircle size={17} className="quick-action-arrow" />
-        </button>
-      </section>
-
-      {/* Estimations Context Banner */}
-      <div className="info-banner">
-        <Zap size={18} className="text-accent" />
+      {/* Sub-Header matching Screen 2 */}
+      <div className="page-head">
         <div>
-          <strong>Dasar Perhitungan Energi Standby Vampir:</strong> Dihitung dari akumulasi watt standby unit diaudit ×{' '}
-          {number(parameters.standby_hours_per_day, 0)} jam/hari × {number(parameters.standby_days_per_month, 0)}{' '}
-          hari/bulan dengan tarif PLN Rp {number(parameters.tariff_per_kwh, 2)}/kWh. Sinkronisasi data:{' '}
-          {dateTime(data.generated_at)}.
-        </div>
-        <Badge tone="info">Metrik Terpusat</Badge>
-      </div>
-
-      {/* Key Metric Highlights */}
-      <section className="stats-grid">
-        <StatCard
-          icon={<Monitor size={20} />}
-          label="Total PC Diaudit"
-          value={
-            <>
-              {number(totals.audited)} <span className="stat-value-sub">/ {number(totals.pc_target)} PC</span>
-            </>
-          }
-          meta={`${number(totals.progress_percent, 1)}% selesai · 6 laboratorium aktif`}
-          tone="accent"
-        />
-        <StatCard
-          icon={<Zap size={20} />}
-          label="Estimasi Energi Terbuang"
-          value={
-            <>
-              {number(totals.kwh_per_month, 2)} <span className="stat-value-sub">kWh/bln</span>
-            </>
-          }
-          meta={`${number(totals.kwh_per_month, 2)} kWh · ${number(totals.emission_kg_per_month, 2)} kg CO₂e`}
-          tone="blue"
-        />
-        <StatCard
-          icon={<Wallet size={20} />}
-          label="Potensi Kerugian Biaya"
-          value={rupiah(totals.cost_per_month)}
-          meta={`Estimasi pemborosan daya vampir per bulan`}
-          tone="amber"
-        />
-        <StatCard
-          icon={<AlertTriangle size={20} />}
-          label="Perlu Perhatian Tim"
-          value={number(attention)}
-          meta={`${totals.panel_warnings} panel batas kritis · ${totals.pending_incidents} insiden terbuka`}
-          tone={attention > 0 ? 'red' : 'accent'}
-        />
-      </section>
-
-      <div className="dashboard-layout">
-        {/* Main Section: 6 Lab Room Cards & Recent Audits */}
-        <div className="dashboard-main">
-          <section className="card">
-            <div className="card-head">
-              <div>
-                <h2 className="card-title">Status Enam Laboratorium Komputer UNKLAB</h2>
-                <p className="card-sub">Klik lab untuk melakukan audit atau meninjau unit PC secara spesifik.</p>
-              </div>
-              <Link className="text-link" to="/audit">
-                Buka Konsol Audit <ArrowRight size={14} />
-              </Link>
-            </div>
-
-            <div className="labs-grid">
-              {data.labs.map((lab) => {
-                const isComplete = lab.audited_count >= lab.capacity && lab.capacity > 0
-                return (
-                  <Link className="lab-card" to={`/audit?lab=${lab.id}`} key={lab.id}>
-                    <div className="lab-card-head">
-                      <div>
-                        <div className="lab-name">{lab.name}</div>
-                        <div className="lab-location">{lab.location || 'Gedung Laboratorium Komputer'}</div>
-                      </div>
-                      <Badge tone={lab.not_audited ? 'neutral' : isComplete ? 'success' : 'accent'} dot>
-                        {lab.not_audited ? 'Belum Ada Data' : `${number(lab.progress_percent, 1)}%`}
-                      </Badge>
-                    </div>
-
-                    <ProgressBar
-                      value={lab.progress_percent}
-                      tone={lab.not_audited ? 'warning' : isComplete ? 'success' : 'accent'}
-                    />
-
-                    <div className="lab-metrics">
-                      <div>
-                        <span>PC Terdata</span>
-                        <strong>
-                          {lab.audited_count}/{lab.capacity}
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Energi Vampir</span>
-                        <strong>{number(lab.energy.kwh_per_month, 2)} kWh</strong>
-                      </div>
-                      <div>
-                        <span>Biaya / Bulan</span>
-                        <strong>{compactRupiah(lab.energy.cost_per_month)}</strong>
-                      </div>
-                    </div>
-
-                    <div className="lab-card-foot">
-                      <span>
-                        {lab.not_audited ? 'Audit belum dimulai' : `Audit terakhir ${relativeTime(lab.latest_audit_at)}`}
-                      </span>
-                      {lab.faulty_count > 0 && (
-                        <Badge tone="danger">{lab.faulty_count} unit rusak/gangguan</Badge>
-                      )}
-                    </div>
-                  </Link>
-                )
-              })}
-            </div>
-          </section>
-
-          {/* Recent Audit Stream */}
-          <section className="card">
-            <div className="card-head">
-              <div>
-                <h2 className="card-title">Catatan Audit PC Terkini</h2>
-                <p className="card-sub">Entri data audit terbaru yang masuk dari auditor lapangan.</p>
-              </div>
-              <Link className="text-link" to="/audit">
-                Lihat Seluruh Log <ArrowRight size={14} />
-              </Link>
-            </div>
-
-            {data.recent_audits.length === 0 ? (
-              <div className="empty-inline">Belum ada aktivitas audit PC yang tercatat di database.</div>
-            ) : (
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Nomor PC</th>
-                      <th>Laboratorium</th>
-                      <th>Spesifikasi RAM &amp; SSD</th>
-                      <th>Daya Standby</th>
-                      <th>Auditor</th>
-                      <th>Waktu Simpan</th>
-                      <th>Kondisi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.recent_audits.map((audit) => (
-                      <tr key={audit.id}>
-                        <td className="cell-strong">{audit.pc_number}</td>
-                        <td>{audit.lab_name}</td>
-                        <td className="cell-muted">{audit.spec.label}</td>
-                        <td>
-                          <strong>{number(audit.spec.standby_watt, 2)} W</strong>
-                        </td>
-                        <td>{audit.auditor?.name ?? '—'}</td>
-                        <td className="cell-muted">{dateTime(audit.audited_at)}</td>
-                        <td>
-                          {audit.is_faulty ? (
-                            <Badge tone="danger">Rusak / Gangguan</Badge>
-                          ) : (
-                            <Badge tone="success" dot>
-                              Normal
-                            </Badge>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+          <div className="eyebrow">
+            FAKULTAS ILMU KOMPUTER • Gedung Kuliah Terpadu Lt. 3
+          </div>
+          <h1>Konsol Telemetri Energi &amp; 6 Laboratorium Komputer</h1>
+          <p>
+            Pemantauan konsumsi daya dinamis, beban parasitik (vampire load), dan integritas distribusi
+            MCB fasa tunggal.
+          </p>
         </div>
 
-        {/* Sidebar: Incident Feed & Warnings */}
-        <aside className="dashboard-side">
-          {/* Incidents Live Feed */}
-          <section className="card">
-            <div className="card-head">
-              <div className="flex-center-gap">
-                <ShieldAlert size={18} className="text-danger" />
-                <div>
-                  <h2 className="card-title">Live Incident Feed</h2>
-                  <p className="card-sub">Laporan gangguan tegangan ke Maintenance</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setIncidentModalOpen(true)}
-              >
-                + Lapor
-              </button>
-            </div>
-
-            {data.incidents.length === 0 ? (
-              <div className="empty-inline">Tidak ada insiden tegangan terbuka saat ini.</div>
-            ) : (
-              <div className="incident-mini-list">
-                {data.incidents.slice(0, 5).map((incident) => (
-                  <div className="incident-mini" key={incident.id}>
-                    <div className="incident-mini-top">
-                      <span className="incident-mini-lab">{incident.lab_name}</span>
-                      <Badge tone={incidentStatusTone(incident.status)}>{incident.status_label}</Badge>
-                    </div>
-                    <p className="incident-mini-desc">{incident.description}</p>
-                    <div className="incident-mini-foot">
-                      <span>Oleh: {incident.reporter?.name ?? 'Admin'}</span>
-                      <span>{relativeTime(incident.created_at)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="card-foot-link">
-              <Link to="/panels" className="text-link">
-                Lihat Manajemen Insiden &amp; Panel <ArrowRight size={14} />
-              </Link>
-            </div>
-          </section>
-
-          {/* Panel Warnings */}
-          <section className="card">
-            <div className="card-head">
-              <div>
-                <h2 className="card-title">Peringatan Beban Panel</h2>
-                <p className="card-sub">Beban MCB 10 A (2.200 W) &amp; 40 A (8.800 W)</p>
-              </div>
-              <Badge tone={data.panels.summary.warnings > 0 ? 'warning' : 'success'}>
-                {data.panels.summary.warnings} peringatan
-              </Badge>
-            </div>
-
-            {data.panels.warnings.length === 0 ? (
-              <div className="empty-inline">Semua panel listrik berada dalam batas aman.</div>
-            ) : (
-              <div className="warning-list">
-                {data.panels.warnings.map((warning) => (
-                  <Link
-                    to="/panels"
-                    className="warning-item"
-                    key={`${warning.lab_room_id}-${warning.group_type}`}
-                  >
-                    <div className={`warning-icon warning-${panelStatusTone(warning.status)}`}>
-                      <Gauge size={16} />
-                    </div>
-                    <div className="warning-copy">
-                      <strong>
-                        {warning.lab_name} · {warning.group_label}
-                      </strong>
-                      <span>
-                        {warning.load_watt !== null ? `${number(warning.load_watt)} W` : 'Belum ada pembacaan'} ·{' '}
-                        {warning.percent !== null ? `${number(warning.percent, 1)}%` : '—'} dari batas{' '}
-                        {number(warning.limit_watt)} W
-                      </span>
-                    </div>
-                    <Badge tone={panelStatusTone(warning.status)}>{warning.status_label}</Badge>
-                  </Link>
-                ))}
-              </div>
-            )}
-            <div className="data-note">{data.panels.data_note}</div>
-          </section>
-
-          {/* Calculation Parameters Card */}
-          <section className="card param-card">
-            <div className="card-head">
-              <div>
-                <h2 className="card-title">Parameter Perhitungan</h2>
-                <p className="card-sub">Konfigurasi formula estimasi energi</p>
-              </div>
-              <Clock size={16} className="card-head-icon" />
-            </div>
-            <dl className="param-list">
-              <div>
-                <dt>
-                  <Zap size={14} /> Durasi Standby
-                </dt>
-                <dd>{number(parameters.standby_hours_per_day, 0)} jam/hari</dd>
-              </div>
-              <div>
-                <dt>
-                  <Clock size={14} /> Siklus Bulanan
-                </dt>
-                <dd>{number(parameters.standby_days_per_month, 0)} hari/bulan</dd>
-              </div>
-              <div>
-                <dt>
-                  <Wallet size={14} /> Tarif PLN Kampus
-                </dt>
-                <dd>Rp {number(parameters.tariff_per_kwh, 2)}/kWh</dd>
-              </div>
-              <div>
-                <dt>
-                  <Leaf size={14} /> Faktor Emisi CO₂
-                </dt>
-                <dd>{number(parameters.emission_factor_kg_per_kwh, 2)} kg/kWh</dd>
-              </div>
-            </dl>
-          </section>
-        </aside>
+        <div className="head-actions-row">
+          <button className="btn btn-secondary btn-sm" onClick={() => void load()} disabled={refreshing}>
+            <span className="badge-dot" style={{ backgroundColor: '#10b981' }} />
+            Pembacaan Terkini
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={() => toast.success('Sensor tersinkronisasi')}>
+            <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
+            Sinkronisasi Sensor
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => toast.success('Mengunduh log telemetri CSV...')}
+          >
+            <Download size={14} />
+            Ekspor Log
+          </button>
+        </div>
       </div>
 
-      {/* Modal: Laporkan Gangguan Tegangan (UC-05) */}
-      <Modal
-        open={incidentModalOpen}
-        onClose={() => setIncidentModalOpen(false)}
-        title="Laporkan Gangguan Tegangan (UC-05)"
-      >
-        <form onSubmit={handleReportIncident} className="modal-form">
-          <p className="modal-intro">
-            Laporan ini akan diteruskan secara instan ke <strong>Facility Maintenance Live Feed</strong> (&lt; 3
-            detik) untuk penanganan segera demi mencegah MCB trip atau kerusakan perangkat.
+      {/* Top 2 Charts Grid (Active vs Vampire Area Chart + Per-Lab Bar Chart) */}
+      <div className="dashboard-top-grid">
+        {/* Left: Active vs Standby Area Comparison */}
+        <section className="chart-card">
+          <div className="card-head">
+            <div>
+              <div className="eyebrow" style={{ color: '#94a3b8' }}>
+                TELEMETRI MINGGUAN (SENIN - MINGGU)
+              </div>
+              <h2 className="card-title">Analisis Komparasi Daya Aktif vs. Vampir (Standby)</h2>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span className="badge-dot" style={{ backgroundColor: '#38bdf8' }} /> Beban Aktif (~150W/PC)
+              </span>
+              <span style={{ color: '#f97316', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span className="badge-dot" style={{ backgroundColor: '#f97316' }} /> Daya Vampir (5-12W/PC)
+              </span>
+            </div>
+          </div>
+
+          <div className="chart-kpi-header">
+            <div className="chart-kpi-item">
+              <span className="chart-kpi-label">TOTAL DAYA AKTIF</span>
+              <span className="chart-kpi-val">18.4 <span style={{ fontSize: '12px', color: '#64748b' }}>kW</span></span>
+              <span className="chart-kpi-sub">Puncak: Rabu 14:20 WITA</span>
+            </div>
+            <div className="chart-kpi-item">
+              <span className="chart-kpi-label">STANDBY WASTED DRAW</span>
+              <span className="chart-kpi-val" style={{ color: '#f97316' }}>
+                1.24 <span style={{ fontSize: '12px', color: '#64748b' }}>kW</span>
+              </span>
+              <span className="chart-kpi-sub">Di luar jam operasional lab</span>
+            </div>
+            <div className="chart-kpi-item">
+              <span className="chart-kpi-label">RASIO KEBOCORAN VAMPIR</span>
+              <span className="chart-kpi-val" style={{ color: '#fbbf24' }}>6.5%</span>
+              <span className="chart-kpi-sub">Standar efisiensi: &lt; 2.5%</span>
+            </div>
+          </div>
+
+          {/* SVG Comparative Wave / Area Graph */}
+          <div style={{ height: '140px', position: 'relative', width: '100%', marginBottom: '10px' }}>
+            <svg viewBox="0 0 700 140" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
+              <defs>
+                <linearGradient id="activeGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.35" />
+                  <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0.0" />
+                </linearGradient>
+                <linearGradient id="vampGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#f97316" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="#f97316" stopOpacity="0.0" />
+                </linearGradient>
+              </defs>
+
+              {/* Grid lines */}
+              <line x1="0" y1="35" x2="700" y2="35" stroke="#26292e" strokeDasharray="3 3" />
+              <line x1="0" y1="70" x2="700" y2="70" stroke="#26292e" strokeDasharray="3 3" />
+              <line x1="0" y1="105" x2="700" y2="105" stroke="#26292e" strokeDasharray="3 3" />
+
+              {/* Active load area (Cyan) */}
+              <path
+                d="M 0 110 Q 80 110, 110 50 T 220 20 T 330 30 T 440 25 T 550 55 T 660 110 L 700 115 L 700 140 L 0 140 Z"
+                fill="url(#activeGrad)"
+              />
+              <path
+                d="M 0 110 Q 80 110, 110 50 T 220 20 T 330 30 T 440 25 T 550 55 T 660 110 L 700 115"
+                stroke="#38bdf8"
+                strokeWidth="2.5"
+                fill="none"
+              />
+
+              {/* Standby Vampire load area (Orange) */}
+              <path
+                d="M 0 120 Q 100 118, 200 115 T 350 100 T 500 118 T 700 122 L 700 140 L 0 140 Z"
+                fill="url(#vampGrad)"
+              />
+              <path
+                d="M 0 120 Q 100 118, 200 115 T 350 100 T 500 118 T 700 122"
+                stroke="#f97316"
+                strokeWidth="2"
+                fill="none"
+              />
+
+              {/* Peak indicator dot */}
+              <circle cx="220" cy="20" r="4" fill="#38bdf8" stroke="#ffffff" strokeWidth="2" />
+            </svg>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '10px',
+              fontFamily: 'var(--font-mono)',
+              color: '#64748b',
+              borderTop: '1px solid #1e2126',
+              paddingTop: '6px',
+            }}
+          >
+            <span>SEN</span>
+            <span>SEL</span>
+            <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>RAB (Puncak)</span>
+            <span>KAM</span>
+            <span>JUM</span>
+            <span>SAB</span>
+            <span>MIN (Idle)</span>
+          </div>
+
+          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '12px' }}>
+            ⓘ Standby rata-rata malam hari stabil di kisaran 1.150W - 1.290W di 6 Laboratorium. Sumber: Panel
+            Digital Schneider IEM3255
+          </div>
+        </section>
+
+        {/* Right: Per-Lab Load Distribution Bar Chart */}
+        <section className="chart-card">
+          <div className="card-head">
+            <div>
+              <div className="eyebrow" style={{ color: '#94a3b8' }}>
+                DISTRIBUSI PEMBEBANAN
+              </div>
+              <h2 className="card-title">Beban Watt Per Lab</h2>
+            </div>
+            <span className="badge badge-warning">Real-time</span>
+          </div>
+          <p className="card-sub" style={{ marginBottom: '16px' }}>
+            Perbandingan konsumsi daya total (PC + AC). Sorotan kritis pada anomali Lab 3.
           </p>
 
-          <FormField label="Pilih Laboratorium Komputer" htmlFor="incidentLabId">
-            <select
-              id="incidentLabId"
-              className="input"
-              value={incidentLabId}
-              onChange={(e) => setIncidentLabId(e.target.value)}
-              required
-            >
-              <option value="">Pilih laboratorium…</option>
-              {data.labs.map((lab) => (
-                <option key={lab.id} value={lab.id}>
-                  {lab.name} ({lab.location || 'Lab Komputer'})
-                </option>
-              ))}
-            </select>
-          </FormField>
-
-          <FormField
-            label="Deskripsi Masalah / Gangguan Tegangan"
-            htmlFor="incidentDesc"
-            hint="Contoh: Tegangan drop ke 190V, stopkontak meja 4 bergetar/korslet, MCB AC trip tiba-tiba saat kelas."
+          {/* Bar Chart Container */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'space-between',
+              height: '140px',
+              paddingBottom: '8px',
+              borderBottom: '1px solid #26292e',
+              gap: '8px',
+            }}
           >
-            <textarea
-              id="incidentDesc"
-              className="input textarea"
-              rows={4}
-              placeholder="Jelaskan indikasi gangguan atau gejala anomali listrik..."
-              value={incidentDesc}
-              onChange={(e) => setIncidentDesc(e.target.value)}
-              required
-            />
-          </FormField>
+            {[
+              { lab: 'L-01', val: '2.4 kW', height: '45%', color: '#38bdf8', critical: false },
+              { lab: 'L-02', val: '3.1 kW', height: '62%', color: '#38bdf8', critical: false },
+              { lab: 'L-03', val: '5.8 kW', height: '95%', color: '#f97316', critical: true, tag: '+420W IDLE' },
+              { lab: 'L-04', val: '3.8 kW', height: '68%', color: '#38bdf8', critical: false },
+              { lab: 'L-05', val: '3.1 kW', height: '55%', color: '#38bdf8', critical: false },
+              { lab: 'L-06', val: '1.8 kW', height: '35%', color: '#38bdf8', critical: false },
+            ].map((bar) => (
+              <div
+                key={bar.lab}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  height: '100%',
+                  justifyContent: 'flex-end',
+                  position: 'relative',
+                }}
+              >
+                {bar.tag && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      fontSize: '8.5px',
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: 700,
+                      color: '#f87171',
+                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {bar.tag}
+                  </span>
+                )}
+                <span
+                  style={{
+                    fontSize: '9.5px',
+                    fontFamily: 'var(--font-mono)',
+                    color: bar.critical ? '#f97316' : '#94a3b8',
+                    marginBottom: '4px',
+                  }}
+                >
+                  {bar.val}
+                </span>
+                <div
+                  style={{
+                    width: '100%',
+                    height: bar.height,
+                    backgroundColor: bar.color,
+                    borderRadius: '4px 4px 0 0',
+                    boxShadow: bar.critical ? '0 0 10px rgba(249, 115, 22, 0.4)' : 'none',
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontFamily: 'var(--font-mono)',
+                    color: '#64748b',
+                    marginTop: '6px',
+                  }}
+                >
+                  {bar.lab}
+                </span>
+              </div>
+            ))}
+          </div>
 
-          {incidentError && (
-            <div className="login-error" role="alert">
-              <AlertCircle size={16} />
-              <span>{incidentError}</span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '11px',
+              marginTop: '12px',
+            }}
+          >
+            <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="badge-dot" style={{ backgroundColor: '#ef4444' }} /> Beban MCB Lab 3 tertinggi (82.4%)
+            </span>
+            <Link to="/panels" style={{ color: '#38bdf8', fontSize: '11px', fontWeight: 600 }}>
+              Periksa &gt;
+            </Link>
+          </div>
+        </section>
+      </div>
+
+      {/* Middle 5 Metric Cards (Including Donut Chart, Vampire Standby, Completion, Finance, MCB Peak) */}
+      <div className="dashboard-kpi-row">
+        {/* 1. Donut Composition Card */}
+        <div className="card" style={{ padding: '16px 18px' }}>
+          <div className="eyebrow" style={{ color: '#94a3b8', fontSize: '9.5px' }}>
+            STATUS UNIT TERHUBUNG
+          </div>
+          <h3 style={{ fontSize: '13px', marginBottom: '8px' }}>Komposisi Daya 240 PC</h3>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '10px 0' }}>
+            {/* SVG Donut */}
+            <div style={{ position: 'relative', width: '74px', height: '74px', flexShrink: 0 }}>
+              <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                {/* Background circle */}
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#26292e" strokeWidth="4" />
+                {/* Mati Total (59.2%) */}
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#10b981"
+                  strokeWidth="4"
+                  strokeDasharray="59 100"
+                  strokeDashoffset="0"
+                />
+                {/* Aktif (30.8%) */}
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#0ea5e9"
+                  strokeWidth="4"
+                  strokeDasharray="31 100"
+                  strokeDashoffset="-59"
+                />
+                {/* Standby (10%) */}
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#f97316"
+                  strokeWidth="4"
+                  strokeDasharray="10 100"
+                  strokeDashoffset="-90"
+                />
+              </svg>
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 700,
+                  lineHeight: 1,
+                }}
+              >
+                <span>240</span>
+                <span style={{ fontSize: '7px', color: '#64748b' }}>UNITS</span>
+              </div>
             </div>
-          )}
 
-          <div className="modal-actions">
+            <div style={{ fontSize: '10.5px', lineHeight: 1.6, flex: 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#10b981' }}>● Mati (0W)</span>
+                <span className="mono">142</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#38bdf8' }}>● Aktif (~150W)</span>
+                <span className="mono">74</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#f97316' }}>● Standby (5-45W)</span>
+                <span className="mono">24</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.4 }}>
+            24 PC Vampir konsumsi daya sia-sia setara 2 AC 1/2 PK continuously.
+          </div>
+        </div>
+
+        {/* 2. Total Standby Power */}
+        <div className="card" style={{ padding: '16px 18px' }}>
+          <div className="eyebrow" style={{ color: '#94a3b8', fontSize: '9.5px' }}>
+            STANDBY WASTED POWER
+          </div>
+          <h3 style={{ fontSize: '13px' }}>Total Daya Standby</h3>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '6px 0 2px' }}>
+            <span style={{ fontSize: '22px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#f97316' }}>
+              1.240 <span style={{ fontSize: '12px', color: '#94a3b8' }}>Watt</span>
+            </span>
+            <span className="badge badge-warning" style={{ fontSize: '10px', padding: '1px 5px' }}>
+              +8.4%
+            </span>
+          </div>
+          <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px' }}>
+            Batas ambang efisiensi target: &lt; 500 W (Selisih +740 W)
+          </p>
+          {/* Segmented level indicator */}
+          <div style={{ display: 'flex', gap: '3px' }}>
+            {[1, 1, 1, 1, 1, 1, 1, 0, 0, 0].map((v, i) => (
+              <div
+                key={i}
+                style={{
+                  flex: 1,
+                  height: '6px',
+                  borderRadius: '2px',
+                  backgroundColor: v ? '#f97316' : '#26292e',
+                }}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* 3. Auditing Completion Progress */}
+        <div className="card" style={{ padding: '16px 18px' }}>
+          <div className="eyebrow" style={{ color: '#94a3b8', fontSize: '9.5px' }}>
+            AUDITING COMPLETION
+          </div>
+          <h3 style={{ fontSize: '13px' }}>Progress Audit PC</h3>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '6px 0 2px' }}>
+            <span style={{ fontSize: '22px', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+              205 <span style={{ fontSize: '13px', color: '#64748b' }}>/ 240 PC</span>
+            </span>
+            <span className="badge badge-success" style={{ fontSize: '10px', padding: '1px 5px' }}>
+              85.4%
+            </span>
+          </div>
+          <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px' }}>
+            Sisa 35 PC di Lab 3 &amp; Lab 5 belum diverifikasi petugas
+          </p>
+          <ProgressBar value={85.4} tone="success" height={6} />
+        </div>
+
+        {/* 4. Financial Waste */}
+        <div className="card" style={{ padding: '16px 18px' }}>
+          <div className="eyebrow" style={{ color: '#94a3b8', fontSize: '9.5px' }}>
+            FINANCIAL WASTE VELOCITY
+          </div>
+          <h3 style={{ fontSize: '13px' }}>Estimasi Pemborosan</h3>
+          <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'var(--font-mono)', margin: '6px 0 2px' }}>
+            Rp 1.289.400 <span style={{ fontSize: '11px', color: '#64748b' }}>/ bln</span>
+          </div>
+          <p style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+            Berdasarkan tarif B-2 TR PLN: Rp 1.444,70 / kWh
+          </p>
+        </div>
+
+        {/* 5. Critical Peak Load */}
+        <div className="card" style={{ padding: '16px 18px' }}>
+          <div className="eyebrow" style={{ color: '#f87171', fontSize: '9.5px' }}>
+            CRITICAL PEAK LOAD
+          </div>
+          <h3 style={{ fontSize: '13px' }}>Beban MCB Tertinggi</h3>
+          <div
+            style={{
+              fontSize: '22px',
+              fontWeight: 700,
+              fontFamily: 'var(--font-mono)',
+              color: '#f87171',
+              margin: '6px 0 2px',
+            }}
+          >
+            Lab 3 (82.4%)
+          </div>
+          <p style={{ fontSize: '11px', color: '#fca5a5', marginTop: '4px' }}>
+            MCB 10A Meja PC: 1.812 W / 2.200 W (Batas Kritis)
+          </p>
+        </div>
+      </div>
+
+      {/* Bottom Section: 6 Lab Telemetry Cards */}
+      <section className="card" style={{ marginTop: '20px' }}>
+        <div className="card-head">
+          <div>
+            <div className="eyebrow" style={{ color: '#94a3b8' }}>
+              SUB-SISTEM DISTRIBUSI DAYA LABORATORIUM
+            </div>
+            <h2 className="card-title">Status Telemetri 6 Laboratorium Komputer</h2>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
             <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => setIncidentModalOpen(false)}
-              disabled={incidentSubmitting}
+              className={`btn btn-xs ${!filterActionOnly ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setFilterActionOnly(false)}
             >
-              Batal
+              Filter Ruang: Semua (6)
             </button>
-            <button type="submit" className="btn btn-danger" disabled={incidentSubmitting}>
-              {incidentSubmitting ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />}
-              <span>{incidentSubmitting ? 'Mengirim Laporan…' : 'Kirim ke Maintenance Sekarang'}</span>
+            <button
+              className={`btn btn-xs ${filterActionOnly ? 'btn-danger' : 'btn-secondary'}`}
+              onClick={() => setFilterActionOnly(true)}
+            >
+              Perlu Tindakan (2)
             </button>
           </div>
-        </form>
-      </Modal>
+        </div>
+
+        <div className="labs-grid">
+          {displayedLabs.map((lab) => (
+            <div
+              key={lab.id}
+              className={`lab-card ${lab.statusTone === 'danger' ? 'critical' : ''}`}
+            >
+              <div className="lab-card-head">
+                <div>
+                  <div className="lab-code">{lab.code}</div>
+                  <div className="lab-name">{lab.name}</div>
+                </div>
+                <span className={`badge badge-${lab.statusTone}`}>
+                  <span className="badge-dot" /> {lab.status}
+                </span>
+              </div>
+
+              <div className="lab-metrics-stitch">
+                <div className="lab-metric-line">
+                  <span className="label">PC Terverifikasi Audit:</span>
+                  <span className="val">{lab.pcAudit}</span>
+                </div>
+                <ProgressBar value={lab.pcProgress} tone={lab.statusTone as any} height={4} />
+
+                <div className="lab-metric-line" style={{ marginTop: '6px' }}>
+                  <span className="label">
+                    <Zap size={11} /> MCB 10A (Meja PC):
+                  </span>
+                  <span className="val">{lab.mcb10a}</span>
+                </div>
+                <ProgressBar value={lab.mcb10aProgress} tone={lab.statusTone as any} height={4} />
+
+                <div className="lab-metric-line" style={{ marginTop: '6px' }}>
+                  <span className="label">
+                    <Gauge size={11} /> MCB 40A (4 AC Split):
+                  </span>
+                  <span className="val">{lab.mcb40a}</span>
+                </div>
+                <ProgressBar value={lab.mcb40aProgress} tone="accent" height={4} />
+
+                <div
+                  className="lab-metric-line"
+                  style={{
+                    marginTop: '8px',
+                    paddingTop: '6px',
+                    borderTop: '1px solid #1e2126',
+                  }}
+                >
+                  <span className="label">Vampire Standby Draw:</span>
+                  <span
+                    className="val"
+                    style={{ color: lab.statusTone === 'danger' ? '#f87171' : 'var(--primary-mint)' }}
+                  >
+                    {lab.vampire}
+                  </span>
+                </div>
+              </div>
+
+              <Link
+                to={lab.statusTone === 'danger' ? '/panels' : '/audit'}
+                className="lab-card-action-btn"
+              >
+                {lab.btnLabel}
+              </Link>
+            </div>
+          ))}
+        </div>
+      </section>
     </>
   )
 }

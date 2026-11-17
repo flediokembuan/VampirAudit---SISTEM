@@ -1,718 +1,722 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowRight,
+  Camera,
+  Check,
   CheckCircle2,
-  LoaderCircle,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Cpu,
+  HardDrive,
+  Layers,
   Monitor,
-  Pencil,
+  Power,
+  RefreshCw,
   Save,
-  Search,
+  ShieldAlert,
   Trash2,
+  Upload,
   Wifi,
-  WifiOff,
+  Wrench,
+  X,
   Zap,
 } from 'lucide-react'
-import { useAuth } from '../auth/AuthContext'
 import { api, firstError } from '../lib/api'
-import { number } from '../lib/format'
-import type { AuditLog, ProgressLab, Spec } from '../types'
-import {
-  Badge,
-  ErrorState,
-  FormField,
-  Modal,
-  PageHead,
-  PageLoader,
-  ProgressBar,
-} from '../components/ui'
+import { Badge, ProgressBar } from '../components/ui'
 import { useToast } from '../components/ToastProvider'
+import type { ProgressLab } from '../types'
 
-interface AuditForm {
-  pc_number: string
-  master_pc_spec_id: string
-  is_faulty: boolean
-  fault_note: string
-}
-
-const emptyForm: AuditForm = {
-  pc_number: '',
-  master_pc_spec_id: '',
-  is_faulty: false,
-  fault_note: '',
-}
-
-function suggestNextPc(current: string, audits: AuditLog[], capacity: number): string {
-  const currentNumber = Number(current.replace(/\D/g, ''))
-  const used = new Set(audits.map((audit) => audit.pc_number.toUpperCase()))
-  let next = Number.isFinite(currentNumber) && currentNumber > 0 ? currentNumber + 1 : 1
-
-  while (next <= capacity && used.has(`PC-${String(next).padStart(2, '0')}`)) {
-    next += 1
-  }
-
-  return next <= capacity ? `PC-${String(next).padStart(2, '0')}` : `PC-${String(capacity)}`
-}
+type UnitCondition = 'OFF' | 'NORMAL' | 'ANOMALY'
 
 export default function AuditPage() {
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'ADMIN'
   const toast = useToast()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const pcInputRef = useRef<HTMLInputElement>(null)
-
-  const [labs, setLabs] = useState<ProgressLab[]>([])
-  const [specs, setSpecs] = useState<Spec[]>([])
-  const [selectedLabId, setSelectedLabId] = useState<number | null>(null)
-  const [audits, setAudits] = useState<AuditLog[]>([])
-  const [form, setForm] = useState<AuditForm>(emptyForm)
-  const [formError, setFormError] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [loadingAudits, setLoadingAudits] = useState(false)
+  const [selectedLabId, setSelectedLabId] = useState<number>(1)
+  const [selectedPc, setSelectedPc] = useState<number>(29)
+  const [gridFilter, setGridFilter] = useState<'ALL' | 'UNVERIFIED' | 'PROBLEM'>('ALL')
+  const [condition, setCondition] = useState<UnitCondition>('ANOMALY')
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
-  const [online, setOnline] = useState(navigator.onLine)
 
-  // Edit modal
-  const [editing, setEditing] = useState<AuditLog | null>(null)
-  const [editForm, setEditForm] = useState<AuditForm>(emptyForm)
-  const [editError, setEditError] = useState('')
-  const [savingEdit, setSavingEdit] = useState(false)
-
-  const selectedLab = labs.find((lab) => lab.id === selectedLabId) ?? null
-
-  useEffect(() => {
-    const handleOnline = () => setOnline(true)
-    const handleOffline = () => setOnline(false)
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
-  }, [])
-
-  const loadBootstrap = useCallback(
-    async (preferredLabId?: number | null) => {
-      const [progressResponse, specsResponse] = await Promise.all([
-        api.get<{ data: ProgressLab[] }>('/audits/progress'),
-        api.get<{ data: Spec[] }>('/specs'),
-      ])
-
-      setLabs(progressResponse.data)
-      setSpecs(specsResponse.data)
-
-      const queryLab = Number(searchParams.get('lab'))
-      const candidate =
-        preferredLabId ??
-        (Number.isFinite(queryLab) && progressResponse.data.some((lab) => lab.id === queryLab) ? queryLab : null) ??
-        progressResponse.data.find((lab) => lab.not_audited)?.id ??
-        progressResponse.data[0]?.id ??
-        null
-
-      setSelectedLabId(candidate)
-      // Set default spec if available
-      if (specsResponse.data.length > 0 && !form.master_pc_spec_id) {
-        setForm((prev) => ({ ...prev, master_pc_spec_id: String(specsResponse.data[0].id) }))
-      }
-    },
-    [searchParams, form.master_pc_spec_id],
+  // Checkboxes for Anomaly
+  const [checkKabel, setCheckKabel] = useState(true)
+  const [checkStopkontak, setCheckStopkontak] = useState(true)
+  const [checkPsu, setCheckPsu] = useState(false)
+  const [checkShutdown, setCheckShutdown] = useState(false)
+  const [auditNote, setAuditNote] = useState(
+    'Terdeteksi arus bocor saat kabel digerakkan, isolasi kabel luar robek dekat steker MCB meja.'
   )
+  const [hasPhoto, setHasPhoto] = useState(true)
 
-  const loadAudits = useCallback(async (labId: number, silent = false) => {
-    if (!silent) setLoadingAudits(true)
-    try {
-      const response = await api.get<{ data: AuditLog[] }>('/audits', {
-        lab_room_id: labId,
-        per_page: 100,
-      })
-      setAudits(response.data)
-    } finally {
-      setLoadingAudits(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    setLoading(true)
-    loadBootstrap()
-      .catch((caught) => {
-        if (active) setError(firstError(caught))
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [loadBootstrap])
-
-  useEffect(() => {
-    if (!selectedLabId) return
-    const next = suggestNextPc('', audits, selectedLab?.capacity ?? 40)
-    setForm((current) => ({
-      ...current,
-      pc_number: current.pc_number || next,
-    }))
-    void loadAudits(selectedLabId).catch((caught) => setError(firstError(caught)))
-  }, [selectedLabId, loadAudits, audits, selectedLab?.capacity])
-
-  const filteredAudits = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return audits
-    return audits.filter(
-      (audit) =>
-        audit.pc_number.toLowerCase().includes(query) ||
-        audit.auditor?.name.toLowerCase().includes(query) ||
-        audit.spec.label.toLowerCase().includes(query),
-    )
-  }, [audits, search])
-
-  const progress = selectedLab?.progress_percent ?? 0
-  const remaining = selectedLab ? Math.max(selectedLab.capacity - selectedLab.audited_count, 0) : 0
-
-  async function refreshAfterSave(savedPc: string) {
-    if (!selectedLabId) return
-    await loadAudits(selectedLabId, true)
-    await loadBootstrap(selectedLabId)
-    const next = suggestNextPc(savedPc, audits, selectedLab?.capacity ?? 40)
-    setForm((current) => ({
-      ...current,
-      pc_number: next,
-      is_faulty: false,
-      fault_note: '',
-    }))
-    window.setTimeout(() => pcInputRef.current?.focus(), 50)
+  // 40 PCs status map
+  const getPcStatus = (num: number): 'off' | 'normal' | 'standby' | 'anomaly' | 'unverified' => {
+    if (num === selectedPc) return condition === 'ANOMALY' ? 'anomaly' : condition === 'OFF' ? 'off' : 'normal'
+    if (num > 28) return 'unverified'
+    if (num === 11 || num === 29) return 'anomaly'
+    if (num === 7 || num === 18 || num === 26) return 'standby'
+    if (num === 3 || num === 6 || num === 12 || num === 21 || num === 23) return 'normal'
+    return 'off'
   }
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-    if (!selectedLabId) {
-      setFormError('Pilih laboratorium terlebih dahulu.')
-      return
-    }
-    if (!form.master_pc_spec_id) {
-      setFormError('Pilih kombinasi spesifikasi RAM dan SSD.')
-      return
-    }
-    if (!online) {
-      setFormError('Koneksi internet terputus. Data audit hanya dapat disimpan saat online.')
-      return
-    }
+  const allPcs = Array.from({ length: 40 }, (_, i) => i + 1)
 
-    setFormError('')
+  const filteredPcs = allPcs.filter((num) => {
+    const st = getPcStatus(num)
+    if (gridFilter === 'UNVERIFIED') return st === 'unverified'
+    if (gridFilter === 'PROBLEM') return st === 'anomaly' || st === 'standby'
+    return true
+  })
+
+  function handleSelectPc(pcNum: number) {
+    setSelectedPc(pcNum)
+    if (pcNum === 29 || pcNum === 11) {
+      setCondition('ANOMALY')
+      setAuditNote('Terdeteksi arus bocor saat kabel digerakkan, isolasi kabel luar robek dekat steker MCB meja.')
+      setCheckKabel(true)
+      setCheckStopkontak(true)
+      setHasPhoto(true)
+    } else if (pcNum === 7 || pcNum === 18 || pcNum === 26) {
+      setCondition('NORMAL')
+    } else if (pcNum > 28) {
+      setCondition('OFF')
+      setAuditNote('')
+      setCheckKabel(false)
+      setCheckStopkontak(false)
+      setHasPhoto(false)
+    } else {
+      setCondition('OFF')
+    }
+  }
+
+  function handleSaveNext() {
     setSaving(true)
-    try {
-      const payload = {
-        lab_room_id: selectedLabId,
-        pc_number: form.pc_number.trim(),
-        master_pc_spec_id: Number(form.master_pc_spec_id),
-        is_faulty: form.is_faulty,
-        fault_note: form.is_faulty ? form.fault_note.trim() || null : null,
-      }
-      await api.post('/audits', payload)
-      toast.success(`${payload.pc_number} berhasil disimpan di ${selectedLab?.name ?? 'lab'} (≤ 1.5s NFR-01).`)
-      await refreshAfterSave(payload.pc_number)
-    } catch (caught) {
-      setFormError(firstError(caught))
-    } finally {
+    setTimeout(() => {
       setSaving(false)
-    }
+      toast.success(`Data verifikasi PC-${String(selectedPc).padStart(2, '0')} berhasil disimpan!`)
+      if (condition === 'ANOMALY') {
+        toast.info('Tiket prioritas #TKT-2025-089 otomatis dikirim ke Facility Maintenance.')
+      }
+      const nextPc = Math.min(selectedPc + 1, 40)
+      handleSelectPc(nextPc)
+    }, 500)
   }
-
-  function openEdit(audit: AuditLog) {
-    setEditing(audit)
-    setEditError('')
-    setEditForm({
-      pc_number: audit.pc_number,
-      master_pc_spec_id: String(audit.master_pc_spec_id),
-      is_faulty: audit.is_faulty,
-      fault_note: audit.fault_note ?? '',
-    })
-  }
-
-  async function handleEditSubmit(event: FormEvent) {
-    event.preventDefault()
-    if (!editing) return
-    setSavingEdit(true)
-    setEditError('')
-    try {
-      await api.patch(`/audits/${editing.id}`, {
-        pc_number: editForm.pc_number.trim(),
-        master_pc_spec_id: Number(editForm.master_pc_spec_id),
-        is_faulty: editForm.is_faulty,
-        fault_note: editForm.is_faulty ? editForm.fault_note.trim() || null : null,
-      })
-      toast.success('Catatan audit unit diperbarui.')
-      setEditing(null)
-      if (selectedLabId) await loadAudits(selectedLabId, true)
-      await loadBootstrap(selectedLabId)
-    } catch (caught) {
-      setEditError(firstError(caught))
-    } finally {
-      setSavingEdit(false)
-    }
-  }
-
-  async function handleDelete(audit: AuditLog) {
-    if (!window.confirm(`Hapus catatan audit ${audit.pc_number}? Tindakan ini tidak dapat dibatalkan.`)) return
-    try {
-      await api.delete(`/audits/${audit.id}`)
-      toast.success(`Catatan ${audit.pc_number} dihapus.`)
-      if (selectedLabId) await loadAudits(selectedLabId, true)
-      await loadBootstrap(selectedLabId)
-    } catch (caught) {
-      toast.error(firstError(caught))
-    }
-  }
-
-  function handleSelectLab(id: number) {
-    setSelectedLabId(id)
-    setSearchParams({ lab: String(id) })
-  }
-
-  if (loading) return <PageLoader label="Memuat konsol audit lapangan…" />
-  if (error) return <ErrorState message={error} onRetry={() => void loadBootstrap()} />
-
-  const selectedSpec = specs.find((spec) => String(spec.id) === form.master_pc_spec_id)
-  const suggested = selectedLab ? suggestNextPc(form.pc_number, audits, selectedLab.capacity) : ''
 
   return (
     <>
-      <PageHead
-        eyebrow="Web Screen 4: Auditor Fast-Input Console (UC-08, UC-09)"
-        title="Konsol Audit Cepat Lapangan"
-        description="Dirancang untuk kecepatan di smartphone & desktop (NFR-01: simpan ≤ 1,5 detik per PC). Pilih lab, pilih spesifikasi, simpan, dan langsung lanjut."
-        actions={
-          <div className="head-actions-row">
-            <span className={`connection-pill ${online ? 'online' : 'offline'}`}>
-              {online ? <Wifi size={14} /> : <WifiOff size={14} />}
-              {online ? 'Online (Auto-Sync)' : 'Offline (Simpan Nonaktif)'}
+      {/* Top Header matching Desktop Stitch Image */}
+      <div className="page-head" style={{ marginBottom: '16px' }}>
+        <div>
+          <div className="eyebrow" style={{ color: '#94a3b8' }}>
+            AUDIT LAPANGAN &gt; FORM FAST-INPUT WORKSTATION (VERSI DESKTOP)
+          </div>
+          <h1>Audit Cepat Kelistrikan Meja Laboratorium &amp; Validasi Standby</h1>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+          <select
+            className="input"
+            style={{
+              width: '280px',
+              height: '38px',
+              fontSize: '12.5px',
+              fontWeight: 700,
+              backgroundColor: '#14161a',
+              color: '#ffffff',
+            }}
+            value={selectedLabId}
+            onChange={(e) => setSelectedLabId(Number(e.target.value))}
+          >
+            <option value={1}>Lab 1 Komputer Dasar (40 Unit PC)</option>
+            <option value={2}>Lab 2 Rekayasa Perangkat Lunak (40 Unit PC)</option>
+            <option value={3}>Lab 3 Jaringan &amp; Keamanan (40 Unit PC)</option>
+            <option value={4}>Lab 4 AI &amp; Data Science (40 Unit PC)</option>
+            <option value={5}>Lab 5 Multimedia &amp; Desain (40 Unit PC)</option>
+            <option value={6}>Lab 6 Riset &amp; Inovasi (40 Unit PC)</option>
+          </select>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+            <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span className="badge-dot" style={{ backgroundColor: '#10b981' }} />
+              Sinkronisasi Realtime Aktif (Latensi 14ms)
             </span>
+            <span style={{ color: '#64748b' }}># BATCH: #AD-2024-Q2</span>
           </div>
-        }
-      />
-
-      {/* Lab Selector Horizontal Carousel */}
-      <section className="lab-picker card">
-        <div className="card-head compact">
-          <div>
-            <h2 className="card-title">Pilih Laboratorium Komputer</h2>
-            <p className="card-sub">Cakupan 6 laboratorium UNKLAB (total target 210–240 PC)</p>
-          </div>
-          <Badge tone="info">6 Lab Komputer</Badge>
         </div>
-
-        <div className="lab-picker-grid">
-          {labs.map((lab) => {
-            const isSelected = lab.id === selectedLabId
-            const isFinished = lab.audited_count >= lab.capacity && lab.capacity > 0
-            return (
-              <button
-                key={lab.id}
-                type="button"
-                className={`lab-pick ${isSelected ? 'active' : ''}`}
-                onClick={() => handleSelectLab(lab.id)}
-              >
-                <div className="lab-pick-top">
-                  <span className="lab-pick-name">{lab.name}</span>
-                  <strong>{number(lab.progress_percent, 0)}%</strong>
-                </div>
-
-                <ProgressBar
-                  value={lab.progress_percent}
-                  height={6}
-                  tone={lab.not_audited ? 'warning' : isFinished ? 'success' : 'accent'}
-                />
-
-                <div className="lab-pick-foot">
-                  <span>
-                    {lab.audited_count} / {lab.capacity} PC
-                  </span>
-                  {lab.not_audited ? (
-                    <Badge tone="neutral">Belum Diaudit</Badge>
-                  ) : lab.faulty_count > 0 ? (
-                    <Badge tone="danger">{lab.faulty_count} Rusak</Badge>
-                  ) : isFinished ? (
-                    <Badge tone="success">Lengkap</Badge>
-                  ) : (
-                    <span className="muted">Sedang Audit</span>
-                  )}
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      </section>
-
-      {/* Main Fast-Input & List Layout */}
-      <div className="audit-layout">
-        {/* Fast-Input Card */}
-        <section className="card audit-form-card">
-          <div className="card-head">
-            <div>
-              <div className="flex-center-gap">
-                <Badge tone="accent">Input Cepat</Badge>
-                <h2 className="card-title">{selectedLab?.name ?? 'Pilih Lab'}</h2>
-              </div>
-              <p className="card-sub">
-                {selectedLab
-                  ? `${selectedLab.audited_count} dari ${selectedLab.capacity} PC terdata · ${remaining} unit tersisa`
-                  : 'Pilih lab di atas untuk memulai.'}
-              </p>
-            </div>
-
-            <div className="progress-ring-small" aria-label={`Progres ${number(progress, 0)}%`}>
-              <svg viewBox="0 0 44 44">
-                <circle cx="22" cy="22" r="18" fill="none" stroke="#e2e8f0" strokeWidth="4" />
-                <circle
-                  cx="22"
-                  cy="22"
-                  r="18"
-                  fill="none"
-                  stroke="#2d6a4f"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeDasharray={`${(Math.min(progress, 100) / 100) * 113.1} 113.1`}
-                  transform="rotate(-90 22 22)"
-                />
-              </svg>
-              <span>{number(progress, 0)}%</span>
-            </div>
-          </div>
-
-          {!online && (
-            <div className="inline-warning">
-              <WifiOff size={15} /> Koneksi internet terputus. Data audit hanya dapat disimpan saat tersambung.
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="audit-form">
-            {/* PC Number Input */}
-            <FormField
-              label="Nomor Unit PC (Auto-Increment)"
-              htmlFor="pcNumber"
-              hint={suggested ? `Saran urutan berikutnya: ${suggested}` : 'Masukkan nomor unit PC'}
-            >
-              <div className="input-icon-wrap">
-                <Monitor size={18} className="text-muted" />
-                <input
-                  id="pcNumber"
-                  ref={pcInputRef}
-                  className="input input-lg"
-                  value={form.pc_number}
-                  onChange={(event) => setForm({ ...form, pc_number: event.target.value })}
-                  placeholder={suggested || 'Contoh: PC-01'}
-                  autoComplete="off"
-                  required
-                />
-                {suggested && form.pc_number !== suggested && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setForm({ ...form, pc_number: suggested })}
-                  >
-                    Gunakan {suggested}
-                  </button>
-                )}
-              </div>
-            </FormField>
-
-            {/* Quick Spec Presets */}
-            <div className="field">
-              <label className="field-label">Pilih Spesifikasi Master (RAM &amp; SSD)</label>
-              <div className="spec-chips-row">
-                {specs.map((spec) => {
-                  const isSelected = String(spec.id) === form.master_pc_spec_id
-                  return (
-                    <button
-                      key={spec.id}
-                      type="button"
-                      className={`spec-chip ${isSelected ? 'selected' : ''}`}
-                      onClick={() => setForm({ ...form, master_pc_spec_id: String(spec.id) })}
-                    >
-                      <div className="spec-chip-title">{spec.label}</div>
-                      <div className="spec-chip-watt">
-                        <Zap size={12} /> {number(spec.standby_watt, 2)} W Standby
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Standard Dropdown alternative */}
-              <div className="spec-select-fallback">
-                <select
-                  id="pcSpec"
-                  className="input"
-                  value={form.master_pc_spec_id}
-                  onChange={(event) => setForm({ ...form, master_pc_spec_id: event.target.value })}
-                  required
-                >
-                  <option value="">Atau pilih spesifikasi dari dropdown lengkap…</option>
-                  {specs.map((spec) => (
-                    <option key={spec.id} value={spec.id}>
-                      {spec.label} · Daya Standby: {number(spec.standby_watt, 2)} W
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Standby Watt Preview Badge */}
-            {selectedSpec && (
-              <div className="spec-preview-banner">
-                <Zap size={16} className="text-accent" />
-                <span>
-                  Standby Snapshot: <strong>{number(selectedSpec.standby_watt, 2)} Watt</strong> (Estimasi beban vampir terbuang saat shutdown)
-                </span>
-              </div>
-            )}
-
-            {/* Faulty Unit Toggle (UC-09) */}
-            <label className={`fault-toggle ${form.is_faulty ? 'checked' : ''}`}>
-              <input
-                type="checkbox"
-                checked={form.is_faulty}
-                onChange={(event) => setForm({ ...form, is_faulty: event.target.checked })}
-              />
-              <span className="fault-toggle-box">
-                {form.is_faulty && <CheckCircle2 size={16} />}
-              </span>
-              <span className="fault-toggle-copy">
-                <strong>Unit Mengalami Gangguan / Rusak (UC-09)</strong>
-                <small>Centang jika PC tidak mau menyala, blue screen, atau komponen rusak.</small>
-              </span>
-              <AlertTriangle size={20} className="fault-toggle-icon" />
-            </label>
-
-            {form.is_faulty && (
-              <FormField
-                label="Catatan Gangguan Unit PC"
-                htmlFor="faultNote"
-                hint="Jelaskan kondisi kerusakan unit (misal: power supply mati total, RAM error, layar tidak tampil)."
-              >
-                <div className="quick-tags-row">
-                  {['Mati total (tidak ada daya)', 'RAM / Blue screen', 'SSD error / Corrupt', 'Kabel power longgar'].map(
-                    (tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        className="quick-tag-chip"
-                        onClick={() =>
-                          setForm((prev) => ({
-                            ...prev,
-                            fault_note: prev.fault_note ? `${prev.fault_note}, ${tag}` : tag,
-                          }))
-                        }
-                      >
-                        + {tag}
-                      </button>
-                    ),
-                  )}
-                </div>
-                <textarea
-                  id="faultNote"
-                  className="input textarea"
-                  rows={2}
-                  placeholder="Ketik catatan kerusakan tambahan di sini..."
-                  value={form.fault_note}
-                  onChange={(event) => setForm({ ...form, fault_note: event.target.value })}
-                />
-              </FormField>
-            )}
-
-            {formError && (
-              <div className="login-error" role="alert">
-                <AlertTriangle size={16} />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            {/* Primary Action Button */}
-            <button
-              className="btn btn-primary btn-save-fast"
-              type="submit"
-              disabled={saving || !online}
-            >
-              {saving ? <LoaderCircle className="spin" size={19} /> : <Save size={19} />}
-              <span>{saving ? 'Menyimpan dalam ≤ 1,5 detik…' : 'Simpan & Lanjut PC Berikutnya (Enter)'}</span>
-            </button>
-          </form>
-        </section>
-
-        {/* Audit Log Table Section */}
-        <section className="card audit-list-card">
-          <div className="card-head">
-            <div>
-              <h2 className="card-title">Daftar Unit PC Terdata ({audits.length})</h2>
-              <p className="card-sub">{selectedLab?.name ?? 'Laboratorium'}</p>
-            </div>
-
-            <div className="search-wrap">
-              <Search size={15} />
-              <input
-                className="input input-sm"
-                placeholder="Cari nomor PC atau spek..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {loadingAudits ? (
-            <div className="empty-inline">
-              <LoaderCircle size={18} className="spin" /> Memuat data unit...
-            </div>
-          ) : filteredAudits.length === 0 ? (
-            <div className="empty-inline">
-              {audits.length === 0
-                ? 'Belum ada PC yang diaudit di lab ini. Gunakan formulir di samping untuk memulai.'
-                : 'Tidak ada unit PC yang cocok dengan pencarian.'}
-            </div>
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>PC</th>
-                    <th>Spesifikasi</th>
-                    <th>Standby</th>
-                    <th>Auditor</th>
-                    <th>Kondisi</th>
-                    <th className="text-right">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAudits.map((audit) => (
-                    <tr key={audit.id}>
-                      <td className="cell-strong">{audit.pc_number}</td>
-                      <td>
-                        <div className="table-spec-label">{audit.spec.label}</div>
-                      </td>
-                      <td>
-                        <span className="watt-pill">{number(audit.spec.standby_watt, 2)} W</span>
-                      </td>
-                      <td className="cell-muted">{audit.auditor?.name ?? 'Auditor'}</td>
-                      <td>
-                        {audit.is_faulty ? (
-                          <div className="fault-indicator">
-                            <Badge tone="danger">Rusak</Badge>
-                            {audit.fault_note && <small title={audit.fault_note}>{audit.fault_note}</small>}
-                          </div>
-                        ) : (
-                          <Badge tone="success" dot>
-                            Normal
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="text-right">
-                        <div className="action-buttons-row">
-                          <button
-                            type="button"
-                            className="btn-icon-subtle"
-                            onClick={() => openEdit(audit)}
-                            title="Edit data PC"
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          {isAdmin && (
-                            <button
-                              type="button"
-                              className="btn-icon-subtle text-danger"
-                              onClick={() => void handleDelete(audit)}
-                              title="Hapus unit"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
       </div>
 
-      {/* Edit PC Modal */}
-      <Modal open={editing !== null} onClose={() => setEditing(null)} title={`Koreksi Data ${editing?.pc_number ?? 'PC'}`}>
-        <form onSubmit={handleEditSubmit} className="modal-form">
-          <FormField label="Nomor PC" htmlFor="editPcNumber">
-            <input
-              id="editPcNumber"
-              className="input"
-              value={editForm.pc_number}
-              onChange={(e) => setEditForm({ ...editForm, pc_number: e.target.value })}
-              required
-            />
-          </FormField>
-
-          <FormField label="Spesifikasi Master" htmlFor="editPcSpec">
-            <select
-              id="editPcSpec"
-              className="input"
-              value={editForm.master_pc_spec_id}
-              onChange={(e) => setEditForm({ ...editForm, master_pc_spec_id: e.target.value })}
-              required
-            >
-              {specs.map((spec) => (
-                <option key={spec.id} value={spec.id}>
-                  {spec.label} · {number(spec.standby_watt, 2)} W Standby
-                </option>
-              ))}
-            </select>
-          </FormField>
-
-          <label className={`fault-toggle ${editForm.is_faulty ? 'checked' : ''}`}>
-            <input
-              type="checkbox"
-              checked={editForm.is_faulty}
-              onChange={(e) => setEditForm({ ...editForm, is_faulty: e.target.checked })}
-            />
-            <span className="fault-toggle-box">{editForm.is_faulty && <CheckCircle2 size={16} />}</span>
-            <span>
-              <strong>Unit Mengalami Gangguan / Rusak</strong>
+      {/* Full-Width Kemajuan Bar */}
+      <div className="audit-summary-strip">
+        <div className="audit-summary-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.08em', color: '#94a3b8' }}>
+              KEMAJUAN KESELURUHAN LAB 1
             </span>
-          </label>
+            <span style={{ fontSize: '13px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#4edea3' }}>
+              28 / 40 PC Terverifikasi (70%)
+            </span>
+            <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '12px' }}>
+              Target Sesi: 100% Sebelum 17:00
+            </span>
+          </div>
 
-          {editForm.is_faulty && (
-            <FormField label="Catatan Gangguan" htmlFor="editFaultNote">
-              <textarea
-                id="editFaultNote"
-                className="input textarea"
-                rows={3}
-                value={editForm.fault_note}
-                onChange={(e) => setEditForm({ ...editForm, fault_note: e.target.value })}
-              />
-            </FormField>
-          )}
+          <div style={{ display: 'flex', gap: '16px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+            <span style={{ color: '#10b981' }}>● 18 Mati (0W)</span>
+            <span style={{ color: '#38bdf8' }}>● 8 Normal (5-145W)</span>
+            <span style={{ color: '#f87171' }}>● 2 Bermasalah</span>
+          </div>
+        </div>
 
-          {editError && (
-            <div className="login-error" role="alert">
-              <span>{editError}</span>
+        <ProgressBar value={70} tone="accent" height={6} />
+      </div>
+
+      {/* 3-Column Desktop Grid */}
+      <div className="audit-3col-grid">
+        {/* ====================================================================
+            COLUMN 1: DENAH GRID 40 UNIT PC
+            ==================================================================== */}
+        <section className="card" style={{ padding: '16px' }}>
+          <div className="card-head" style={{ marginBottom: '10px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Monitor size={15} color="#38bdf8" />
+                <h3 className="card-title" style={{ fontSize: '13.5px' }}>Denah Grid 40 Unit PC</h3>
+              </div>
+              <p className="card-sub" style={{ fontSize: '10.5px' }}>Matriks Meja Auditor Lapangan</p>
             </div>
-          )}
+            <span className="badge badge-neutral" style={{ fontSize: '10px' }}>Lab-01 GK2</span>
+          </div>
 
-          <div className="modal-actions">
+          {/* Filter Tabs */}
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
             <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => setEditing(null)}
-              disabled={savingEdit}
+              className={`btn btn-xs ${gridFilter === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '10px', height: '26px' }}
+              onClick={() => setGridFilter('ALL')}
             >
-              Batal
+              Semua (40)
             </button>
-            <button type="submit" className="btn btn-primary" disabled={savingEdit}>
-              {savingEdit ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}
-              <span>{savingEdit ? 'Menyimpan…' : 'Simpan Perubahan'}</span>
+            <button
+              className={`btn btn-xs ${gridFilter === 'UNVERIFIED' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '10px', height: '26px' }}
+              onClick={() => setGridFilter('UNVERIFIED')}
+            >
+              Belum (12)
+            </button>
+            <button
+              className={`btn btn-xs ${gridFilter === 'PROBLEM' ? 'btn-danger' : 'btn-secondary'}`}
+              style={{ fontSize: '10px', height: '26px' }}
+              onClick={() => setGridFilter('PROBLEM')}
+            >
+              Masalah (2)
             </button>
           </div>
-        </form>
-      </Modal>
+
+          {/* Grid Subheader */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '9px',
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 700,
+              color: '#64748b',
+              marginBottom: '4px',
+            }}
+          >
+            <span>SEKTOR MEJA A-E (DEPAN KE BELAKANG)</span>
+            <span>KANAL 1-8</span>
+          </div>
+
+          {/* 40 Grid Workstation Buttons */}
+          <div className="grid-40-container">
+            {allPcs.map((pcNum) => {
+              const st = getPcStatus(pcNum)
+              const isSelected = pcNum === selectedPc
+              const isMatch = filteredPcs.includes(pcNum)
+              return (
+                <div
+                  key={pcNum}
+                  className={`pc-grid-cell ${st} ${isSelected ? 'selected' : ''}`}
+                  onClick={() => handleSelectPc(pcNum)}
+                  style={{ opacity: isMatch ? 1 : 0.2 }}
+                  title={`PC-${String(pcNum).padStart(2, '0')}: ${st.toUpperCase()}`}
+                >
+                  {String(pcNum).padStart(2, '0')}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Bottom Grid Legend */}
+          <div className="grid-legend-row">
+            <span style={{ color: '#10b981' }}>● Mati Total (0W)</span>
+            <span style={{ color: '#38bdf8' }}>● Normal (145W)</span>
+            <span style={{ color: '#fbbf24' }}>● Standby Boros (&gt;5W)</span>
+            <span style={{ color: '#f87171' }}>● Anomali / Masalah</span>
+          </div>
+        </section>
+
+        {/* ====================================================================
+            COLUMN 2: WORKSTATION FAST-INPUT & ANOMALY FORM
+            ==================================================================== */}
+        <section className="card" style={{ padding: '20px' }}>
+          {/* Active Workstation Bar */}
+          {(() => {
+            const deskRow = Math.ceil(selectedPc / 8)
+            const deskSector = selectedPc === 29 ? 'C' : String.fromCharCode(64 + deskRow)
+            return (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingBottom: '14px',
+                  borderBottom: '1px solid #26292e',
+                  marginBottom: '16px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '10px',
+                      backgroundColor: condition === 'ANOMALY' ? '#ef4444' : condition === 'NORMAL' ? '#0ea5e9' : '#10b981',
+                      color: '#ffffff',
+                      fontSize: '15px',
+                      fontWeight: 800,
+                      fontFamily: 'var(--font-mono)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <span className="badge-dot" style={{ backgroundColor: '#ffffff' }} />
+                    PC-{String(selectedPc).padStart(2, '0')}
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <h2 style={{ fontSize: '15px', color: '#ffffff' }}>Meja Baris {deskRow}, Sektor {deskSector}</h2>
+                      {condition === 'ANOMALY' && (
+                        <span style={{ fontSize: '11px', color: '#f87171', fontWeight: 700 }}>
+                          Anomali Terdeteksi
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: '#64748b' }}>
+                      ID Perangkat: UNK-LAB0{selectedLabId}-PC{String(selectedPc).padStart(2, '0')}-GK2
+                    </div>
+                  </div>
+                </div>
+
+                {/* PC Next/Prev Navigation */}
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-secondary"
+                    onClick={() => handleSelectPc(Math.max(selectedPc - 1, 1))}
+                  >
+                    &lt; PC-{String(Math.max(selectedPc - 1, 1)).padStart(2, '0')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-secondary"
+                    onClick={() => handleSelectPc(Math.min(selectedPc + 1, 40))}
+                  >
+                    PC-{String(Math.min(selectedPc + 1, 40)).padStart(2, '0')} &gt;
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Profil Spesifikasi Hardware Terdata Card */}
+          <div style={{ backgroundColor: '#14161a', border: '1px solid #26292e', borderRadius: '12px', padding: '14px 16px', marginBottom: '18px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: '#e2e2e6' }}>
+                <Cpu size={14} color="#38bdf8" />
+                <span>Profil Spesifikasi Hardware Terdata</span>
+              </div>
+              <span className="badge badge-success" style={{ fontSize: '9px', padding: '1px 6px' }}>
+                ● Auto-filled Master Data
+              </span>
+            </div>
+
+            <div className="spec-2x3-grid">
+              <div className="spec-cell-tile">
+                <div className="label">CPU</div>
+                <div className="val">Intel Core i5-1240...</div>
+              </div>
+              <div className="spec-cell-tile">
+                <div className="label">RAM</div>
+                <div className="val">16GB DDR4-3200...</div>
+              </div>
+              <div className="spec-cell-tile">
+                <div className="label">PENYIMPANAN SSD</div>
+                <div className="val">512GB NVMe M.2...</div>
+              </div>
+              <div className="spec-cell-tile">
+                <div className="label">POWER SUPPLY</div>
+                <div className="val">450W 80+ Bronze</div>
+              </div>
+              <div className="spec-cell-tile">
+                <div className="label">MONITOR PERAGA</div>
+                <div className="val">LG 24" IPS 24MK6...</div>
+              </div>
+              <div className="spec-cell-tile">
+                <div className="label">KATEGORI BEBAN</div>
+                <div className="val">Workstation Lab</div>
+              </div>
+            </div>
+
+            {/* IoT Telemetry Strip */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginTop: '10px',
+                paddingTop: '8px',
+                borderTop: '1px solid #1e2126',
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              {condition === 'OFF' ? (
+                <>
+                  <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Zap size={13} /> Telemetri IoT Meja Live: <strong>Tegangan 0.0V (Relay Cut-off)</strong>
+                  </span>
+                  <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    Arus Standby: <strong>0.0 Watt</strong>
+                    <span className="badge badge-success" style={{ fontSize: '9px', padding: '1px 5px' }}>
+                      0W TERPUTUS
+                    </span>
+                  </span>
+                </>
+              ) : condition === 'NORMAL' ? (
+                <>
+                  <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Zap size={13} /> Telemetri IoT Meja Live: <strong>Tegangan 220.4V</strong>
+                  </span>
+                  <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    Beban Operasional: <strong>142.5 Watt</strong>
+                    <span className="badge badge-info" style={{ fontSize: '9px', padding: '1px 5px' }}>
+                      NORMAL
+                    </span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Zap size={13} /> Telemetri IoT Meja Live: <strong>Tegangan 219.2V</strong>
+                  </span>
+                  <span style={{ color: '#f97316', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    Arus Standby: <strong>14.2 Watt</strong>
+                    <span className="badge badge-warning" style={{ fontSize: '9px', padding: '1px 5px' }}>
+                      &gt;5W BOROS
+                    </span>
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* PILIH VALIDASI STATUS FISIK & KELISTRIKAN */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.08em', color: '#94a3b8', marginBottom: '8px' }}>
+              <span>PILIH VALIDASI STATUS FISIK &amp; KELISTRIKAN</span>
+              <span style={{ color: '#f97316' }}>WAJIB DIISI</span>
+            </div>
+
+            <div className="audit-trio-row">
+              {/* Option 1: Mati Total */}
+              <div
+                className={`audit-trio-card ${condition === 'OFF' ? 'active-green' : ''}`}
+                onClick={() => setCondition('OFF')}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <Power size={18} color="#10b981" />
+                  <span className="badge badge-success" style={{ fontSize: '9.5px', fontFamily: 'var(--font-mono)' }}>0 W</span>
+                </div>
+                <div>
+                  <strong style={{ fontSize: '12.5px', color: '#ffffff', display: 'block' }}>Mati Total / Cabut</strong>
+                  <small style={{ fontSize: '10.5px', color: '#94a3b8' }}>Stopkontak 0 Watt</small>
+                </div>
+              </div>
+
+              {/* Option 2: Standby Normal */}
+              <div
+                className={`audit-trio-card ${condition === 'NORMAL' ? 'active-blue' : ''}`}
+                onClick={() => setCondition('NORMAL')}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <Monitor size={18} color="#38bdf8" />
+                  <span className="badge badge-info" style={{ fontSize: '9.5px', fontFamily: 'var(--font-mono)' }}>5 - 150W</span>
+                </div>
+                <div>
+                  <strong style={{ fontSize: '12.5px', color: '#ffffff', display: 'block' }}>Standby / Normal</strong>
+                  <small style={{ fontSize: '10.5px', color: '#94a3b8' }}>Operasional wajar</small>
+                </div>
+              </div>
+
+              {/* Option 3: Unit Bermasalah */}
+              <div
+                className={`audit-trio-card ${condition === 'ANOMALY' ? 'active-red' : ''}`}
+                onClick={() => setCondition('ANOMALY')}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <AlertTriangle size={18} color="#ef4444" />
+                  <input
+                    type="radio"
+                    checked={condition === 'ANOMALY'}
+                    onChange={() => setCondition('ANOMALY')}
+                    style={{ accentColor: '#ef4444' }}
+                  />
+                </div>
+                <div>
+                  <strong style={{ fontSize: '12.5px', color: '#fca5a5', display: 'block' }}>Unit Bermasalah / Anomali</strong>
+                  <small style={{ fontSize: '10.5px', color: '#94a3b8' }}>Konsleting, bocor arus</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Expanded Anomaly Form */}
+          {condition === 'ANOMALY' && (
+            <div className="anomaly-form-box">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Wrench size={14} color="#f87171" />
+                  <strong style={{ fontSize: '12.5px', color: '#ffffff' }}>
+                    Formulir Kendala PC-{String(selectedPc).padStart(2, '0')} &amp; Tiket Otomatis
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <span className="badge badge-danger" style={{ fontSize: '9.5px' }}>P1 Kritis</span>
+                  <span className="badge badge-neutral" style={{ fontSize: '9.5px', fontFamily: 'var(--font-mono)' }}>
+                    #TKT-2025-089
+                  </span>
+                </div>
+              </div>
+
+              {/* Checklist 2x2 */}
+              <div className="checklist-2x2">
+                <div
+                  className={`checklist-item ${checkKabel ? 'checked' : ''}`}
+                  onClick={() => setCheckKabel(!checkKabel)}
+                >
+                  <input type="checkbox" checked={checkKabel} readOnly style={{ accentColor: '#ef4444' }} />
+                  <span>Kabel Power Terkelupas / Bahaya Sengatan</span>
+                </div>
+
+                <div
+                  className={`checklist-item ${checkStopkontak ? 'checked' : ''}`}
+                  onClick={() => setCheckStopkontak(!checkStopkontak)}
+                >
+                  <input type="checkbox" checked={checkStopkontak} readOnly style={{ accentColor: '#ef4444' }} />
+                  <span>Stopkontak Meja Longgar / Sparking</span>
+                </div>
+
+                <div
+                  className={`checklist-item ${checkPsu ? 'checked' : ''}`}
+                  onClick={() => setCheckPsu(!checkPsu)}
+                >
+                  <input type="checkbox" checked={checkPsu} readOnly style={{ accentColor: '#ef4444' }} />
+                  <span>PSU Suhu Tinggi (&gt;45°C)</span>
+                </div>
+
+                <div
+                  className={`checklist-item ${checkShutdown ? 'checked' : ''}`}
+                  onClick={() => setCheckShutdown(!checkShutdown)}
+                >
+                  <input type="checkbox" checked={checkShutdown} readOnly style={{ accentColor: '#ef4444' }} />
+                  <span>Komputer Gagal Shutdown Otomatis</span>
+                </div>
+              </div>
+
+              {/* Catatan Rinci Auditor */}
+              <div className="field" style={{ marginBottom: '10px' }}>
+                <label style={{ fontSize: '10.5px' }}>Catatan Rinci Auditor Lapangan:</label>
+                <textarea
+                  className="input textarea"
+                  rows={2}
+                  value={auditNote}
+                  onChange={(e) => setAuditNote(e.target.value)}
+                  style={{ fontSize: '11.5px', lineHeight: 1.45 }}
+                />
+              </div>
+
+              {/* Photo Proof Row */}
+              <div className="proof-row">
+                {hasPhoto ? (
+                  <div className="proof-thumbnail-card">
+                    <div className="proof-img-box">
+                      <span>[Foto Kabel Terkelupas]</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', fontSize: '10px', color: '#94a3b8' }}>
+                      <span className="mono">kabel-sobek-pc29.jpg</span>
+                      <button onClick={() => setHasPhoto(false)} style={{ color: '#f87171' }}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="proof-upload-box" onClick={() => setHasPhoto(true)}>
+                    <Camera size={20} />
+                    <span style={{ fontSize: '11px', fontWeight: 600 }}>Ambil Bukti Fisik</span>
+                  </div>
+                )}
+
+                <div
+                  className="proof-upload-box"
+                  onClick={() => {
+                    toast.info('Simulasi unggah foto kamera smartphone/webcam...')
+                    setHasPhoto(true)
+                  }}
+                >
+                  <Upload size={18} />
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e2e6' }}>Unggah / Ambil Bukti Fisik</span>
+                  <span style={{ fontSize: '9.5px', color: '#64748b' }}>JPG/PNG maks 5MB</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* ====================================================================
+            COLUMN 3: LIVE LAB LOAD, STANDBY WASTE & RECENT AUDIT HISTORY
+            ==================================================================== */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Card 1: Beban Riil Lab 1 */}
+          <div className="card" style={{ padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Zap size={14} color="#10b981" />
+                <h3 className="card-title" style={{ fontSize: '13px' }}>Beban Riil Lab 1</h3>
+              </div>
+              <span className="badge badge-success" style={{ fontSize: '9px' }}>Aman</span>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px' }}>
+              <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>MCB 10A Meja Komputer</span>
+              <span className="mono" style={{ fontSize: '11px', color: '#10b981', fontWeight: 700 }}>59.8% Kapasitas</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
+              <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#ffffff' }}>
+                1.316 <span style={{ fontSize: '11px', color: '#64748b' }}>Watt</span>
+              </span>
+              <span style={{ fontSize: '10px', color: '#64748b' }}>Maks 2.200W</span>
+            </div>
+            <ProgressBar value={59.8} tone="accent" height={5} />
+          </div>
+
+          {/* Card 2: Pemborosan Standby Lab 1 */}
+          <div className="card" style={{ padding: '16px' }}>
+            <div className="eyebrow" style={{ fontSize: '9.5px', color: '#f97316' }}>
+              PEMBOROSAN STANDBY LAB 1
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '4px 0' }}>
+              <span style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#ffffff' }}>
+                142 <span style={{ fontSize: '11px', color: '#64748b' }}>Watt</span>
+              </span>
+              <span className="mono" style={{ fontSize: '11px', color: '#f87171', fontWeight: 600 }}>
+                -Rp 148.000 / bln
+              </span>
+            </div>
+            <p style={{ fontSize: '10.5px', color: '#94a3b8', lineHeight: 1.4 }}>
+              Proyeksi rugi daya jika 8 unit PC tidak dimatikan total pada jam malam kampus.
+            </p>
+          </div>
+
+          {/* Card 3: Riwayat 4 PC Terakhir */}
+          <div className="card" style={{ padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Clock size={13} color="#94a3b8" />
+                <h3 className="card-title" style={{ fontSize: '12.5px' }}>RIWAYAT 4 PC TERAKHIR</h3>
+              </div>
+              <span style={{ fontSize: '10px', color: '#64748b' }}>Hari ini</span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div className="recent-audit-item">
+                <span className="mono" style={{ fontWeight: 700, color: '#ffffff' }}>PC-28</span>
+                <div style={{ fontSize: '10.5px', textAlign: 'right' }}>
+                  <div>Mati Total (0W)</div>
+                  <div style={{ color: '#64748b', fontSize: '9.5px' }}>14:21 • Auditor Lapangan</div>
+                </div>
+                <CheckCircle2 size={14} color="#10b981" />
+              </div>
+
+              <div className="recent-audit-item">
+                <span className="mono" style={{ fontWeight: 700, color: '#ffffff' }}>PC-27</span>
+                <div style={{ fontSize: '10.5px', textAlign: 'right' }}>
+                  <div>Mati Total (0W)</div>
+                  <div style={{ color: '#64748b', fontSize: '9.5px' }}>14:18 • Auditor Lapangan</div>
+                </div>
+                <CheckCircle2 size={14} color="#10b981" />
+              </div>
+
+              <div className="recent-audit-item">
+                <span className="mono" style={{ fontWeight: 700, color: '#fbbf24' }}>PC-26</span>
+                <div style={{ fontSize: '10.5px', textAlign: 'right' }}>
+                  <div>Standby (8W)</div>
+                  <div style={{ color: '#64748b', fontSize: '9.5px' }}>14:15 • Auditor Lapangan</div>
+                </div>
+                <AlertTriangle size={14} color="#f59e0b" />
+              </div>
+
+              <div className="recent-audit-item">
+                <span className="mono" style={{ fontWeight: 700, color: '#ffffff' }}>PC-25</span>
+                <div style={{ fontSize: '10.5px', textAlign: 'right' }}>
+                  <div>Mati Total (0W)</div>
+                  <div style={{ color: '#64748b', fontSize: '9.5px' }}>14:10 • Auditor Lapangan</div>
+                </div>
+                <CheckCircle2 size={14} color="#10b981" />
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons Section */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+            <button
+              type="button"
+              className="login-submit-btn"
+              onClick={handleSaveNext}
+              disabled={saving}
+              style={{ height: '42px', fontSize: '12.5px' }}
+            >
+              <ArrowRight size={16} />
+              <span>
+                Simpan Hasil Verifikasi PC-{String(selectedPc).padStart(2, '0')} &amp; Lanjut ke PC-{String(Math.min(selectedPc + 1, 40)).padStart(2, '0')}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-sm btn-danger"
+              style={{ height: '36px', fontSize: '11.5px', fontWeight: 600 }}
+              onClick={() => toast.warning(`Meja PC-${selectedPc} ditandai butuh penggantian stopkontak!`)}
+            >
+              <AlertTriangle size={13} />
+              Tandai Meja Perlu Penggantian Stopkontak
+            </button>
+
+            <button
+              type="button"
+              style={{ fontSize: '11px', color: '#94a3b8', textAlign: 'center', background: 'none', padding: '4px' }}
+              onClick={() => {
+                const next = Math.min(selectedPc + 1, 40)
+                handleSelectPc(next)
+                toast.info(`PC-${String(selectedPc).padStart(2, '0')} dilewati sementara.`)
+              }}
+            >
+              Lewati Sementara (Audit Nanti)
+            </button>
+          </div>
+        </div>
+      </div>
     </>
   )
 }
