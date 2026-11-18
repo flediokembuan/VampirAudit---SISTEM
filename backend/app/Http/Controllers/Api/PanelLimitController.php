@@ -7,6 +7,7 @@ use App\Http\Requests\UpdatePanelLimitRequest;
 use App\Http\Resources\PanelLimitResource;
 use App\Models\PanelLimit;
 use App\Services\EnergyCalculator;
+use App\Services\PanelMonitoringService;
 use App\Services\PanelOverviewService;
 use Illuminate\Http\JsonResponse;
 
@@ -15,6 +16,7 @@ class PanelLimitController extends Controller
     public function __construct(
         private readonly PanelOverviewService $panelOverview,
         private readonly EnergyCalculator $energy,
+        private readonly PanelMonitoringService $panelMonitoringService,
     ) {}
 
     public function index(): JsonResponse

@@ -52,4 +52,9 @@ class User extends Authenticatable
     {
         return in_array($this->role, $roles, true);
     }
+
+    public function getRole(): UserRole
+    {
+        return $this->role;
+    }
 }

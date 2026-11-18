@@ -8,6 +8,10 @@ use Illuminate\Support\Collection;
 
 class EnergyCalculator
 {
+    public const PLN_TARIFF = 1444.70;
+    public const CARBON_EMISSION_FACTOR = 0.78;
+    public const VOLTAGE = 220;
+
     private ?array $parameters = null;
 
     public function flush(): void
@@ -21,13 +25,34 @@ class EnergyCalculator
             return $this->parameters;
         }
 
-        $defaults = config('vampir.defaults');
-        $stored = Setting::query()->pluck('value', 'key');
+        $defaults = config('vampir.defaults', []);
+        try {
+            $stored = Setting::query()->pluck('value', 'key');
+        } catch (\Throwable) {
+            $stored = collect();
+        }
 
         $resolve = function (string $key) use ($defaults, $stored): float {
             $value = $stored->get($key);
 
-            return $value !== null && is_numeric($value) ? (float) $value : (float) $defaults[$key];
+            if ($value !== null && is_numeric($value)) {
+                return (float) $value;
+            }
+
+            if (isset($defaults[$key]) && is_numeric($defaults[$key])) {
+                return (float) $defaults[$key];
+            }
+
+            return match ($key) {
+                'tariff_per_kwh' => self::PLN_TARIFF,
+                'emission_factor_kg_per_kwh' => self::CARBON_EMISSION_FACTOR,
+                'standby_hours_per_day' => 16.0,
+                'standby_days_per_month' => 22.0,
+                'default_warning_percent' => 80.0,
+                'incident_poll_seconds' => 30.0,
+                'active_pc_watt' => 150.0,
+                default => 0.0,
+            };
         };
 
         return $this->parameters = [
@@ -75,5 +100,45 @@ class EnergyCalculator
         $totalWatt = $audits->sum(fn ($audit) => (float) $audit->standby_watt_snapshot);
 
         return $this->monthlyEstimate((float) $totalWatt, $parameters);
+    }
+
+    /**
+     * Hitung energi standby terbuang per bulan dalam kWh.
+     * calculateWastedEnergy(float $standbyWatt, int $units, float $hours): float
+     */
+    public function calculateWastedEnergy(float $standbyWatt, int $units, float $hours): float
+    {
+        return ($standbyWatt * $units * $hours) / 1000;
+    }
+
+    /**
+     * Hitung kerugian finansial dari kWh yang terbuang.
+     */
+    public function calculateFinancialLoss(float $kWh): float
+    {
+        $params = $this->parameters();
+        $tariff = $params['tariff_per_kwh'] ?? self::PLN_TARIFF;
+        return round($kWh * $tariff, 2);
+    }
+
+    /**
+     * Hitung persentase beban panel.
+     */
+    public function calculateLoadPercentage(float $current, float $limit): float
+    {
+        if ($limit <= 0) {
+            return 0.0;
+        }
+        return round(($current / $limit) * 100, 2);
+    }
+
+    /**
+     * Hitung emisi karbon dari kWh.
+     */
+    public function calculateCarbonEmission(float $kWh): float
+    {
+        $params = $this->parameters();
+        $factor = $params['emission_factor_kg_per_kwh'] ?? self::CARBON_EMISSION_FACTOR;
+        return round($kWh * $factor, 4);
     }
 }
