@@ -69,14 +69,23 @@ class UrgentIncidentController extends Controller
             ]);
         }
 
+        $dataToUpdate = [];
+
         if ($targetIndex !== $currentIndex) {
-            $incident->update([
-                'status' => $target,
-                'status_updated_by' => $request->user()->id,
-                'status_updated_at' => now(),
-                'status_note' => $request->input('note'),
-                'resolved_at' => $target->isResolved() ? now() : null,
-            ]);
+            $dataToUpdate['status'] = $target;
+            $dataToUpdate['status_updated_by'] = $request->user()->id;
+            $dataToUpdate['status_updated_at'] = now();
+            $dataToUpdate['resolved_at'] = $target->isResolved() ? now() : null;
+        }
+
+        if ($request->has('note')) {
+            $dataToUpdate['status_note'] = $request->input('note');
+            $dataToUpdate['status_updated_by'] = $request->user()->id;
+            $dataToUpdate['status_updated_at'] = now();
+        }
+
+        if (! empty($dataToUpdate)) {
+            $incident->update($dataToUpdate);
             $incident->load(['labRoom', 'reporter', 'statusUpdatedBy']);
         }
 

@@ -216,7 +216,7 @@ export default function SpecsPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', color: '#64748b', marginBottom: '6px' }}>
-            KATALOG SISTEN &amp; TATA KELOLA HAK AKSES • ADMIN PANEL FIK
+            KATALOG SISTEM &amp; TATA KELOLA HAK AKSES • ADMIN PANEL FIK
           </div>
           <h1 style={{ fontSize: '26px', fontWeight: 800, letterSpacing: '-0.02em', color: '#ffffff', margin: '0 0 6px 0' }}>
             Kelola Master Data &amp; RBAC

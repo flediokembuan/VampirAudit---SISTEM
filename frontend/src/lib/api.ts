@@ -163,6 +163,30 @@ function handleMockFallback<T>(path: string, options: RequestOptions = {}): T {
     return { data: localSpecs } as T
   }
 
+  if (urlPath.startsWith('/specs/')) {
+    const id = Number(urlPath.split('/')[2])
+    const idx = localSpecs.findIndex((s) => s.id === id)
+    if (method === 'DELETE' && idx !== -1) {
+      localSpecs.splice(idx, 1)
+      return { message: 'Spesifikasi dihapus.' } as T
+    }
+    if (method === 'PATCH' && idx !== -1) {
+      const body = options.body as Partial<Spec>
+      const target = localSpecs[idx]
+      const ram = body.ram_gb ?? target.ram_gb
+      const storage = body.storage_gb ?? target.storage_gb
+      const stype = body.storage_type ?? target.storage_type
+      const cpu = body.cpu !== undefined ? body.cpu : target.cpu
+      const updated: Spec = {
+        ...target,
+        ...body,
+        label: `${ram} GB RAM · ${storage} GB ${stype}${cpu ? ` · ${cpu}` : ''}`,
+      }
+      localSpecs[idx] = updated
+      return { data: updated } as T
+    }
+  }
+
   if (urlPath === '/audits') {
     if (method === 'POST') {
       const body = options.body as {
@@ -255,8 +279,13 @@ function handleMockFallback<T>(path: string, options: RequestOptions = {}): T {
       panel.load_watt = body.load_watt
       panel.percent = Math.round((body.load_watt / panel.limit_watt) * 1000) / 10
       panel.status = panel.percent > 100 ? 'OVER' : panel.percent >= panel.warning_percent ? 'WARNING' : 'NORMAL'
+      panel.status_label = panel.status === 'OVER' ? 'Melampaui batas' : panel.status === 'WARNING' ? 'Mendekati batas' : 'Normal'
       panel.recorded_at = new Date().toISOString()
       panel.notes = body.notes ?? null
+
+      const allPanels = mockPanelOverview.labs.flatMap((l) => l.panels)
+      mockPanelOverview.warnings = allPanels.filter((p) => p.status === 'WARNING' || p.status === 'OVER')
+      mockPanelOverview.summary.warnings = mockPanelOverview.warnings.length
     }
     return { data: body, status: panel } as T
   }
@@ -293,6 +322,8 @@ function handleMockFallback<T>(path: string, options: RequestOptions = {}): T {
       target.status = body.status
       target.status_label = body.status === 'SELESAI' ? 'Selesai' : body.status === 'DITANGANI' ? 'Ditangani' : 'Baru'
       target.status_note = body.note ?? null
+      target.resolved_at = body.status === 'SELESAI' ? new Date().toISOString() : null
+      target.updated_at = new Date().toISOString()
       return { data: target } as T
     }
   }

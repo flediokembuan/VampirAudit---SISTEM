@@ -5,8 +5,8 @@ import { ErrorState, PageLoader, ProgressBar } from '../components/ui'
 import { useToast } from '../components/ToastProvider'
 import type { AuditLog, Paginated, PanelOverview, Parameters, ProgressLab, Spec } from '../types'
 
-type UnitCondition = 'OFF' | 'NORMAL' | 'ANOMALY'
 type PcStatus = 'off' | 'normal' | 'standby' | 'anomaly' | 'unverified'
+type UnitCondition = 'OFF' | 'NORMAL' | 'ANOMALY'
 
 function pcCodeFromNumber(num: number): string {
   return `PC-${String(num).padStart(2, '0')}`
@@ -27,11 +27,10 @@ export default function AuditPage() {
   const [panelOverview, setPanelOverview] = useState<(PanelOverview & { parameters?: Parameters }) | null>(null)
   const [labAudits, setLabAudits] = useState<AuditLog[]>([])
   const [selectedLabId, setSelectedLabId] = useState<number>(1)
-  const [selectedPc, setSelectedPc] = useState<number>(29)
-  const selectedPcRef = useRef(29)
+  const [selectedPc, setSelectedPc] = useState<number>(1)
+  const selectedPcRef = useRef(1)
   const [selectedSpecId, setSelectedSpecId] = useState<number>(1)
   const [gridFilter] = useState<'ALL' | 'UNVERIFIED' | 'PROBLEM'>('ALL')
-  const [condition, setCondition] = useState<UnitCondition>('OFF')
   const [isFaulty, setIsFaulty] = useState(false)
   const [ramGb, setRamGb] = useState<number | null>(null)
   const [storageGb, setStorageGb] = useState<number | null>(null)
@@ -74,7 +73,6 @@ export default function AuditPage() {
           const pcAudit = res.audits.find((a) => a.pc_number === pcCodeFromNumber(selectedPcRef.current))
           if (pcAudit) {
             setSelectedSpecId(pcAudit.master_pc_spec_id)
-            setCondition(pcAudit.is_faulty ? 'ANOMALY' : pcAudit.spec.standby_watt === 0 ? 'OFF' : 'NORMAL')
             setIsFaulty(pcAudit.is_faulty)
             setRamGb(pcAudit.spec.ram_gb)
             setStorageGb(pcAudit.spec.storage_gb)
@@ -176,7 +174,6 @@ export default function AuditPage() {
       const found = auditsSource.find((a) => a.pc_number.toUpperCase() === pcCodeFromNumber(pcNum))
       if (found) {
         setSelectedSpecId(found.master_pc_spec_id)
-        setCondition(found.is_faulty ? 'ANOMALY' : found.spec.standby_watt === 0 ? 'OFF' : 'NORMAL')
         setIsFaulty(found.is_faulty)
         setRamGb(found.spec.ram_gb)
         setStorageGb(found.spec.storage_gb)
@@ -191,7 +188,6 @@ export default function AuditPage() {
           setRamGb(specs[0].ram_gb)
           setStorageGb(specs[0].storage_gb)
         }
-        setCondition('OFF')
         setIsFaulty(false)
         setAuditNote('')
         setCheckKabel(false)
@@ -231,14 +227,12 @@ export default function AuditPage() {
       : null
 
     // Determine condition from isFaulty toggle
-    const effectiveCondition: UnitCondition = isAnomalyNow ? 'ANOMALY' : condition === 'ANOMALY' ? 'NORMAL' : condition
+    const effectiveCondition: UnitCondition = isAnomalyNow ? 'ANOMALY' : 'NORMAL'
 
     const targetWatt =
-      effectiveCondition === 'OFF'
-        ? 0
-        : effectiveCondition === 'NORMAL'
-          ? spec.standby_watt
-          : Math.max(spec.standby_watt, 14.2)
+      effectiveCondition === 'ANOMALY'
+        ? Math.max(spec.standby_watt, 14.2)
+        : spec.standby_watt
 
     try {
       if (selectedAudit) {
@@ -260,7 +254,7 @@ export default function AuditPage() {
         })
       }
 
-      if (isAnomalyNow) {
+      if (isAnomalyNow && !selectedAudit?.is_faulty) {
         await api.post('/incidents', {
           lab_room_id: selectedLabId,
           description: `${pcCode} — ${combinedNote}`,
@@ -278,9 +272,6 @@ export default function AuditPage() {
       setSaving(false)
     }
   }
-
-  // Keep handleSaveNext for backward compat (alias)
-  const handleSaveNext = handleSave
 
   async function handleReportOutlet() {
     setReportingOutlet(true)
@@ -492,6 +483,25 @@ export default function AuditPage() {
               </select>
             </div>
 
+            {/* Matched Spec Preview */}
+            <div style={{
+              background: '#0d131a',
+              border: '1px solid #1e293b',
+              borderRadius: '8px',
+              padding: '8px 10px',
+              fontSize: '11px',
+              color: matchedSpec ? '#38bdf8' : '#94a3b8',
+              marginBottom: '10px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}>
+              <span>{matchedSpec ? matchedSpec.label : 'Pilih RAM & SSD'}</span>
+              <span style={{ fontWeight: 700, color: '#f97316' }}>
+                {matchedSpec ? `${matchedSpec.standby_watt} W Standby` : ''}
+              </span>
+            </div>
+
             {/* Toggle: Unit Rusak */}
             <div style={{
               background: isFaulty ? '#450a0a' : '#1a1f2e',
@@ -506,10 +516,7 @@ export default function AuditPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    const next = !isFaulty
-                    setIsFaulty(next)
-                    if (next) setCondition('ANOMALY')
-                    else setCondition('NORMAL')
+                    setIsFaulty(!isFaulty)
                   }}
                   style={{
                     width: '44px', height: '24px', borderRadius: '12px',
@@ -826,8 +833,4 @@ export default function AuditPage() {
       </div>
     </div>
   )
-
-  // Suppress unused warning - handleSaveNext is kept for compatibility
-  void handleSaveNext
-  void handleReportOutlet
 }

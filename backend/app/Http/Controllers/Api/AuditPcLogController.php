@@ -103,6 +103,9 @@ class AuditPcLogController extends Controller
             $data['fault_note'] = null;
         }
 
+        $data['audited_by'] = $request->user()->id;
+        $data['audited_at'] = now();
+
         $auditPcLog->update($data);
         $auditPcLog->load(['labRoom', 'auditor']);
 

@@ -67,9 +67,9 @@ class LabRoomController extends Controller
 
     public function destroy(LabRoom $labRoom): JsonResponse
     {
-        if ($labRoom->audits()->exists()) {
+        if ($labRoom->audits()->exists() || $labRoom->panelReadings()->exists() || $labRoom->incidents()->exists()) {
             throw ValidationException::withMessages([
-                'lab_room' => 'Lab sudah memiliki data audit. Nonaktifkan lab alih-alih menghapusnya.',
+                'lab_room' => 'Lab sudah memiliki data audit, pembacaan beban panel, atau laporan insiden. Nonaktifkan lab alih-alih menghapusnya.',
             ]);
         }
 

@@ -51,9 +51,13 @@ export default function ExecutivePage() {
     const coveragePercent = totalPc > 0 ? ((auditedPc / totalPc) * 100).toFixed(1) : '85.4'
 
     // Mock 12-month billing data if less than 12
+    // Filter bills untuk tahun berjalan saja, lalu index by month
+    const currentYear = new Date().getFullYear()
     const billMap = new Map<number, number>()
     for (const b of data.bills) {
-      billMap.set(b.period_month, b.total_amount)
+      if (b.period_year === currentYear) {
+        billMap.set(b.period_month, b.total_amount)
+      }
     }
 
     // Baseline active bill amounts ~ Rp 18.000.000 - Rp 23.000.000
