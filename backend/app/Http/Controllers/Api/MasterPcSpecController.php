@@ -7,13 +7,15 @@ use App\Http\Requests\StoreMasterPcSpecRequest;
 use App\Http\Requests\UpdateMasterPcSpecRequest;
 use App\Http\Resources\MasterPcSpecResource;
 use App\Models\MasterPcSpec;
+use App\Services\MasterDataService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Validation\ValidationException;
 
 class MasterPcSpecController extends Controller
 {
+    public function __construct(private readonly MasterDataService $masterDataService) {}
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $query = MasterPcSpec::query()
@@ -52,20 +54,14 @@ class MasterPcSpecController extends Controller
             $data['cpu'] = trim((string) $data['cpu']) !== '' ? trim((string) $data['cpu']) : null;
         }
 
-        $masterPcSpec->update($data);
+        $this->masterDataService->updateSpec($data, $masterPcSpec);
 
         return response()->json(['data' => new MasterPcSpecResource($masterPcSpec->refresh())]);
     }
 
     public function destroy(MasterPcSpec $masterPcSpec): JsonResponse
     {
-        if ($masterPcSpec->audits()->exists()) {
-            throw ValidationException::withMessages([
-                'master_pc_spec' => 'Spesifikasi sudah dipakai pada catatan audit. Nonaktifkan alih-alih menghapus.',
-            ]);
-        }
-
-        $masterPcSpec->delete();
+        $this->masterDataService->deleteSpec($masterPcSpec->id);
 
         return response()->json(['message' => 'Spesifikasi dihapus.']);
     }

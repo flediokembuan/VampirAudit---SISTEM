@@ -45,4 +45,9 @@ class UrgentIncident extends Model
     {
         return $this->belongsTo(User::class, 'status_updated_by');
     }
+
+    public function getIssueDescriptionAttribute(): string
+    {
+        return $this->description;
+    }
 }

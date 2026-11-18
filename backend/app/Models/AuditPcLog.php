@@ -46,6 +46,11 @@ class AuditPcLog extends Model
         return $this->belongsTo(MasterPcSpec::class, 'master_pc_spec_id');
     }
 
+    public function masterPcSpec(): BelongsTo
+    {
+        return $this->masterSpec();
+    }
+
     public function auditor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'audited_by');

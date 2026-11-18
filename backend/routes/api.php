@@ -29,6 +29,7 @@ Route::middleware(['auth:sanctum', 'role'])->group(function () {
     Route::middleware('role:ADMIN,AUDITOR')->group(function () {
         Route::get('/audits', [AuditPcLogController::class, 'index']);
         Route::get('/audits/progress', [AuditPcLogController::class, 'progress']);
+        Route::get('/audits/lab/{lab_room_id}/progress', [AuditPcLogController::class, 'labProgress']);
         Route::post('/audits', [AuditPcLogController::class, 'store']);
         Route::patch('/audits/{audit_pc_log}', [AuditPcLogController::class, 'update']);
     });
@@ -41,6 +42,7 @@ Route::middleware(['auth:sanctum', 'role'])->group(function () {
         Route::get('/panel-readings', [PanelReadingController::class, 'index']);
         Route::post('/panel-readings', [PanelReadingController::class, 'store']);
         Route::get('/incidents', [UrgentIncidentController::class, 'index']);
+        Route::get('/incidents/{incident}', [UrgentIncidentController::class, 'show']);
         Route::patch('/incidents/{incident}/status', [UrgentIncidentController::class, 'updateStatus']);
     });
 

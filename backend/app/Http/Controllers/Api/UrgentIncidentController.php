@@ -8,6 +8,8 @@ use App\Http\Requests\StoreIncidentRequest;
 use App\Http\Requests\UpdateIncidentStatusRequest;
 use App\Http\Resources\UrgentIncidentResource;
 use App\Models\UrgentIncident;
+use App\Services\IncidentFeedService;
+use App\Services\IncidentReportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -16,6 +18,11 @@ use Illuminate\Validation\ValidationException;
 
 class UrgentIncidentController extends Controller
 {
+    public function __construct(
+        private readonly IncidentReportService $incidentReportService,
+        private readonly IncidentFeedService $incidentFeedService,
+    ) {}
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $query = UrgentIncident::query()
@@ -43,16 +50,19 @@ class UrgentIncidentController extends Controller
 
     public function store(StoreIncidentRequest $request): JsonResponse
     {
-        $incident = UrgentIncident::query()->create([
-            'lab_room_id' => $request->integer('lab_room_id'),
-            'reported_by' => $request->user()->id,
-            'description' => $request->string('description')->trim()->toString(),
-            'status' => IncidentStatus::Baru,
-        ]);
-
+        $incident = $this->incidentReportService->submitIncident(
+            $request->integer('lab_room_id'),
+            $request->string('description')->trim()->toString(),
+            $request->user()->id,
+        );
         $incident->load(['labRoom', 'reporter', 'statusUpdatedBy']);
-
         return response()->json(['data' => new UrgentIncidentResource($incident)], 201);
+    }
+
+    public function show(UrgentIncident $incident): JsonResponse
+    {
+        $incident = $this->incidentFeedService->getIncidentDetail($incident->id);
+        return response()->json(['data' => new UrgentIncidentResource($incident)]);
     }
 
     public function updateStatus(UpdateIncidentStatusRequest $request, UrgentIncident $incident): JsonResponse

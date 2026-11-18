@@ -9,6 +9,8 @@ use App\Http\Resources\AuditPcLogResource;
 use App\Models\AuditPcLog;
 use App\Models\LabRoom;
 use App\Models\MasterPcSpec;
+use App\Services\AuditService;
+use App\Services\FaultMarkingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -16,6 +18,11 @@ use Illuminate\Validation\ValidationException;
 
 class AuditPcLogController extends Controller
 {
+    public function __construct(
+        private readonly AuditService $auditService,
+        private readonly FaultMarkingService $faultMarkingService,
+    ) {}
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $query = AuditPcLog::query()
@@ -75,6 +82,10 @@ class AuditPcLogController extends Controller
             'audited_by' => $request->user()->id,
             'audited_at' => now(),
         ]);
+
+        if ($audit->is_faulty) {
+            $this->faultMarkingService->markFaulty($audit);
+        }
 
         $audit->load(['labRoom', 'auditor']);
 
@@ -145,5 +156,28 @@ class AuditPcLogController extends Controller
             ]);
 
         return response()->json(['data' => $labs]);
+    }
+
+    public function labProgress(int $lab_room_id): JsonResponse
+    {
+        $lab = LabRoom::query()
+            ->withCount([
+                'audits',
+                'audits as faulty_count' => fn ($query) => $query->where('is_faulty', true),
+            ])
+            ->findOrFail($lab_room_id);
+
+        $percent = $this->auditService->getProgress($lab_room_id);
+
+        return response()->json([
+            'data' => [
+                'lab_room_id' => $lab->id,
+                'name' => $lab->name,
+                'capacity' => $lab->capacity,
+                'audited_count' => $lab->audits_count,
+                'faulty_count' => $lab->faulty_count,
+                'progress_percent' => $percent,
+            ],
+        ]);
     }
 }

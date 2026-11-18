@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\UserManagementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -15,6 +15,8 @@ use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
+    public function __construct(private readonly UserManagementService $userManagementService) {}
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $query = User::query()->orderBy('name');
@@ -50,27 +52,15 @@ class UserController extends Controller
     {
         $data = $request->validated();
 
-        if (array_key_exists('email', $data)) {
-            $data['email'] = strtolower($data['email']);
-        }
-
-        if (empty($data['password'])) {
-            unset($data['password']);
-        }
-
-        if ($user->isAdmin() && isset($data['role']) && $data['role'] !== UserRole::ADMIN->value) {
-            $this->ensureAnotherActiveAdminExists($user);
+        if ($user->isAdmin() && isset($data['role']) && $data['role'] !== \App\Enums\UserRole::ADMIN->value) {
+            $this->userManagementService->ensureAnotherActiveAdminExists($user);
         }
 
         if ($user->isAdmin() && array_key_exists('is_active', $data) && ! $data['is_active']) {
-            $this->ensureAnotherActiveAdminExists($user);
+            $this->userManagementService->ensureAnotherActiveAdminExists($user);
         }
 
-        $user->update($data);
-
-        if (! $user->is_active) {
-            $user->tokens()->delete();
-        }
+        $this->userManagementService->updateUser($data, $user);
 
         return response()->json(['data' => new UserResource($user->refresh())]);
     }
@@ -84,27 +74,11 @@ class UserController extends Controller
         }
 
         if ($user->isAdmin()) {
-            $this->ensureAnotherActiveAdminExists($user);
+            $this->userManagementService->ensureAnotherActiveAdminExists($user);
         }
 
-        $user->update(['is_active' => false]);
-        $user->tokens()->delete();
+        $this->userManagementService->deactivateUser($user->id);
 
         return response()->json(['message' => 'Akun dinonaktifkan.']);
-    }
-
-    private function ensureAnotherActiveAdminExists(User $user): void
-    {
-        $activeAdmins = User::query()
-            ->where('role', UserRole::ADMIN->value)
-            ->where('is_active', true)
-            ->whereKeyNot($user->getKey())
-            ->count();
-
-        if ($activeAdmins === 0) {
-            throw ValidationException::withMessages([
-                'role' => 'Minimal satu akun Admin aktif harus tersedia.',
-            ]);
-        }
     }
 }
