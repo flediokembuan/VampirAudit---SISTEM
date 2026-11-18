@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '../components/ToastProvider'
 import { Badge, ErrorState, FormField, PageHead, PageLoader } from '../components/ui'
-import { api, firstError } from '../lib/api'
+import { api, clearApiCache, firstError } from '../lib/api'
 import { dateTime, number, rupiah } from '../lib/format'
 import type { LabRoom, Parameters, SettingEntry, SettingHistoryEntry, SettingsResponse } from '../types'
 
@@ -80,7 +80,10 @@ export default function SettingsPage() {
   const [formError, setFormError] = useState('')
 
   const load = useCallback(async (silent = false) => {
-    if (!silent) setRefreshing(true)
+    if (!silent) {
+      clearApiCache()
+      setRefreshing(true)
+    }
     try {
       const [response, historyResponse, labsResponse] = await Promise.all([
         api.get<SettingsResponse>('/settings'),
@@ -108,8 +111,7 @@ export default function SettingsPage() {
   }, [])
 
   useEffect(() => {
-    setLoading(true)
-    void load().finally(() => setLoading(false))
+    void load(true).finally(() => setLoading(false))
   }, [load])
 
   const dirty = useMemo(() => {

@@ -36,7 +36,7 @@ class AuditPcLogController extends Controller
             $query->where('pc_number', 'like', $search);
         }
 
-        $perPage = min(max($request->integer('per_page', 25), 5), 100);
+        $perPage = min(max($request->integer('per_page', 25), 5), 500);
 
         return AuditPcLogResource::collection($query->paginate($perPage));
     }

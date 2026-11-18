@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   CheckCircle2,
   Clock,
@@ -9,7 +9,7 @@ import {
   VolumeX,
   Zap,
 } from 'lucide-react'
-import { api, firstError } from '../lib/api'
+import { api, clearApiCache, firstError } from '../lib/api'
 import { number, relativeTime } from '../lib/format'
 import { ErrorState, Modal, PageLoader, ProgressBar } from '../components/ui'
 import { useToast } from '../components/ToastProvider'
@@ -65,12 +65,19 @@ export default function PanelsPage() {
   const [modalSaving, setModalSaving] = useState(false)
   const [modalReadingError, setModalReadingError] = useState('')
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading((prev) => prev)
+  const pollingRef = useRef(false)
+
+  const load = useCallback(async (silent = false, fresh = false) => {
+    if (fresh) {
+      if (pollingRef.current) return
+      pollingRef.current = true
+    } else if (!silent) {
+      clearApiCache()
+    }
     try {
       const [panelsRes, incidentsRes] = await Promise.all([
-        api.get<PanelOverview & { parameters?: Parameters }>('/panel-limits'),
-        api.get<Paginated<Incident>>('/incidents', { per_page: 100 }),
+        api.get<PanelOverview & { parameters?: Parameters }>('/panel-limits', undefined, { fresh }),
+        api.get<Paginated<Incident>>('/incidents', { per_page: 100 }, { fresh }),
       ])
       setPanelOverview(panelsRes)
       setIncidents(incidentsRes.data)
@@ -83,15 +90,19 @@ export default function PanelsPage() {
     } catch (caught) {
       if (!silent) setError(firstError(caught))
     } finally {
+      if (fresh) pollingRef.current = false
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load(true) }, [load])
 
   useEffect(() => {
     const pollSeconds = Math.max(panelOverview?.parameters?.incident_poll_seconds ?? 5, 2)
-    const timer = window.setInterval(() => void load(true), pollSeconds * 1000)
+    const timer = window.setInterval(() => {
+      if (document.hidden || pollingRef.current) return
+      void load(true, true)
+    }, pollSeconds * 1000)
     return () => window.clearInterval(timer)
   }, [load, panelOverview?.parameters?.incident_poll_seconds])
 

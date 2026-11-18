@@ -11,9 +11,17 @@ import type {
 } from '../types'
 
 export const mockUsers: Record<string, AuthUser> = {
-  'admin@unklab.ac.id': {
+  'dosen.admin@unklab.ac.id': {
     id: 1,
-    name: 'Dosen Admin (Koordinator)',
+    name: 'Dosen Admin',
+    email: 'dosen.admin@unklab.ac.id',
+    role: 'ADMIN',
+    role_label: 'Dosen Admin',
+    is_active: true,
+  },
+  'admin@unklab.ac.id': {
+    id: 2,
+    name: 'Dr. R. Palit (Koordinator)',
     email: 'admin@unklab.ac.id',
     role: 'ADMIN',
     role_label: 'Dosen Admin',

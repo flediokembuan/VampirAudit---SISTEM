@@ -39,15 +39,27 @@ class UpdateMasterPcSpecRequest extends FormRequest
                 $storage = $this->integer('storage_gb', $spec->storage_gb);
                 $type = strtoupper($this->string('storage_type', $spec->storage_type)->toString());
 
-                $exists = MasterPcSpec::query()
+                if ($this->has('cpu')) {
+                    $rawCpu = trim((string) $this->input('cpu', ''));
+                    $cpu = $rawCpu !== '' ? $rawCpu : null;
+                } else {
+                    $cpu = $spec->cpu;
+                }
+
+                $query = MasterPcSpec::query()
                     ->whereKeyNot($spec->getKey())
                     ->where('ram_gb', $ram)
                     ->where('storage_gb', $storage)
-                    ->where('storage_type', $type)
-                    ->exists();
+                    ->where('storage_type', $type);
 
-                if ($exists) {
-                    $validator->errors()->add('ram_gb', 'Kombinasi RAM, kapasitas, dan tipe penyimpanan sudah ada.');
+                if ($cpu === null) {
+                    $query->whereNull('cpu');
+                } else {
+                    $query->where('cpu', $cpu);
+                }
+
+                if ($query->exists()) {
+                    $validator->errors()->add('ram_gb', 'Kombinasi RAM, kapasitas, tipe penyimpanan, dan CPU sudah ada.');
                 }
             },
         ];

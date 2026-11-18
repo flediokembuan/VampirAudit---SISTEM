@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateSettingsRequest;
 use App\Http\Resources\SettingResource;
+use App\Models\PanelLimit;
 use App\Models\Setting;
 use App\Models\SettingHistory;
 use App\Services\EnergyCalculator;
@@ -47,7 +48,9 @@ class SettingController extends Controller
 
     public function update(UpdateSettingsRequest $request): JsonResponse
     {
-        DB::transaction(function () use ($request): void {
+        $previousWarningPercent = (int) $this->energy->parameters()['default_warning_percent'];
+
+        DB::transaction(function () use ($request, $previousWarningPercent): void {
             foreach ($request->validated() as $key => $value) {
                 $setting = Setting::query()->firstOrNew(['key' => $key]);
                 $oldValue = $setting->exists ? $setting->value : null;
@@ -73,6 +76,12 @@ class SettingController extends Controller
                     'value' => $newValue,
                     'updated_by' => $request->user()->id,
                 ])->save();
+
+                if ($key === 'default_warning_percent') {
+                    PanelLimit::query()
+                        ->where('warning_percent', $previousWarningPercent)
+                        ->update(['warning_percent' => (int) $newValue]);
+                }
             }
         });
 

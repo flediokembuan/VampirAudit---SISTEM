@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { LogOut, Zap } from 'lucide-react'
 import { roleLabels, useAuth } from '../auth/AuthContext'
+import { prefetchRoleData } from '../lib/api'
 import { initials } from '../lib/format'
 import type { Role } from '../types'
 
@@ -33,10 +34,19 @@ const roleNavs: Record<Role, NavItem[]> = {
 export default function Layout() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  const role = user?.role
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [location.pathname])
+
+  useEffect(() => {
+    if (!role) return
+    const timer = window.setTimeout(() => {
+      prefetchRoleData(role)
+    }, 150)
+    return () => window.clearTimeout(timer)
+  }, [role])
 
   if (!user) return null
 

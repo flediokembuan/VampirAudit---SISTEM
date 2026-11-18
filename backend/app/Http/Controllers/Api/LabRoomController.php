@@ -2,14 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\PanelGroup;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreLabRoomRequest;
 use App\Http\Requests\UpdateLabRoomRequest;
 use App\Http\Resources\LabRoomResource;
 use App\Models\LabRoom;
+use App\Models\PanelLimit;
+use App\Services\EnergyCalculator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class LabRoomController extends Controller
@@ -27,12 +31,29 @@ class LabRoomController extends Controller
         return LabRoomResource::collection($query->get());
     }
 
-    public function store(StoreLabRoomRequest $request): JsonResponse
+    public function store(StoreLabRoomRequest $request, EnergyCalculator $energy): JsonResponse
     {
-        $labRoom = LabRoom::query()->create([
-            ...$request->validated(),
-            'is_active' => $request->boolean('is_active', true),
-        ]);
+        $warningPercent = (int) $energy->parameters()['default_warning_percent'];
+        $voltage = (float) config('vampir.voltage', 220);
+
+        $labRoom = DB::transaction(function () use ($request, $warningPercent, $voltage): LabRoom {
+            $lab = LabRoom::query()->create([
+                ...$request->validated(),
+                'is_active' => $request->boolean('is_active', true),
+            ]);
+
+            foreach ([[PanelGroup::SOCKET, 10], [PanelGroup::AC, 40]] as [$group, $ampere]) {
+                PanelLimit::query()->create([
+                    'lab_room_id' => $lab->id,
+                    'group_type' => $group,
+                    'limit_ampere' => $ampere,
+                    'voltage' => $voltage,
+                    'warning_percent' => $warningPercent,
+                ]);
+            }
+
+            return $lab;
+        });
 
         return response()->json(['data' => new LabRoomResource($labRoom)], 201);
     }

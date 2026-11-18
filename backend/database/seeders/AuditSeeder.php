@@ -58,7 +58,7 @@ class AuditSeeder extends Seeder
 
     /**
      * 40 units -> total 115.00 W
-     * 18 off (0W), 2 faulty (PC-11, PC-29 @ 14.20W = 28.40W), 3 standby (8.00W = 24.00W), 17 normal (62.60W)
+     * 18 off (0W), 2 faulty (PC-11, PC-29 @ 14.20W = 28.40W), 3 standby (8.00W = 24.00W), 16 normal (62.60W)
      */
     private function buildLab1Plan(): array
     {
@@ -94,7 +94,7 @@ class AuditSeeder extends Seeder
 
             if (in_array($i, [3, 6, 12, 21, 23], true) || $i > 28) {
                 $normalIndex++;
-                $watt = $normalIndex === 17 ? 1.80 : 3.80;
+                $watt = $normalIndex <= 14 ? 3.90 : 4.00;
                 $entries[] = [
                     'pc_number' => $pc,
                     'spec_index' => 0,
@@ -159,8 +159,9 @@ class AuditSeeder extends Seeder
     {
         $pcNumbers = array_merge(range(1, 25), [29]);
         $entries = [];
+        $nonFaultyCount = 0;
 
-        foreach ($pcNumbers as $idx => $num) {
+        foreach ($pcNumbers as $num) {
             $pc = sprintf('PC-%02d', $num);
 
             if ($num === 11 || $num === 29) {
@@ -175,7 +176,9 @@ class AuditSeeder extends Seeder
                 continue;
             }
 
-            if ($idx < 14) {
+            $nonFaultyCount++;
+
+            if ($nonFaultyCount <= 14) {
                 $entries[] = [
                     'pc_number' => $pc,
                     'spec_index' => 3,

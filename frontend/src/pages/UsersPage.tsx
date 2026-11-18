@@ -24,7 +24,7 @@ import {
   PageHead,
   PageLoader,
 } from '../components/ui'
-import { api, firstError } from '../lib/api'
+import { api, clearApiCache, firstError } from '../lib/api'
 import { dateOnly, initials } from '../lib/format'
 import type { AppUser, Paginated, Role } from '../types'
 
@@ -76,7 +76,10 @@ export default function UsersPage() {
   const [busyId, setBusyId] = useState<number | null>(null)
 
   const load = useCallback(async (silent = false) => {
-    if (!silent) setRefreshing(true)
+    if (!silent) {
+      clearApiCache()
+      setRefreshing(true)
+    }
     try {
       const response = await api.get<Paginated<AppUser>>('/users')
       setUsers(response.data)
@@ -90,8 +93,7 @@ export default function UsersPage() {
   }, [])
 
   useEffect(() => {
-    setLoading(true)
-    void load().finally(() => setLoading(false))
+    void load(true).finally(() => setLoading(false))
   }, [load])
 
   const counts = useMemo(() => {
