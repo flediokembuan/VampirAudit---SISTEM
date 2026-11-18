@@ -34,14 +34,22 @@ class StoreMasterPcSpecRequest extends FormRequest
                     return;
                 }
 
-                $exists = MasterPcSpec::query()
+                $rawCpu = trim($this->string('cpu')->toString());
+                $cpu = $rawCpu !== '' ? $rawCpu : null;
+
+                $query = MasterPcSpec::query()
                     ->where('ram_gb', $this->integer('ram_gb'))
                     ->where('storage_gb', $this->integer('storage_gb'))
-                    ->where('storage_type', strtoupper($this->string('storage_type')->toString()))
-                    ->exists();
+                    ->where('storage_type', strtoupper($this->string('storage_type')->toString()));
 
-                if ($exists) {
-                    $validator->errors()->add('ram_gb', 'Kombinasi RAM, kapasitas, dan tipe penyimpanan sudah ada.');
+                if ($cpu === null) {
+                    $query->whereNull('cpu');
+                } else {
+                    $query->where('cpu', $cpu);
+                }
+
+                if ($query->exists()) {
+                    $validator->errors()->add('ram_gb', 'Kombinasi RAM, kapasitas, tipe penyimpanan, dan CPU sudah ada.');
                 }
             },
         ];

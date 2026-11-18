@@ -9,7 +9,7 @@ import {
   Users,
   Zap,
 } from 'lucide-react'
-import { api, firstError } from '../lib/api'
+import { api, clearApiCache, firstError } from '../lib/api'
 import { number } from '../lib/format'
 import { ErrorState, Modal, PageLoader } from '../components/ui'
 import { useToast } from '../components/ToastProvider'
@@ -47,10 +47,13 @@ export default function SpecsPage() {
   const [userError, setUserError] = useState('')
 
   const load = useCallback(async (silent = false) => {
-    if (!silent) setRefreshing(true)
+    if (!silent) {
+      clearApiCache()
+      setRefreshing(true)
+    }
     try {
       const [auditsRes, specsRes, labsRes, usersRes] = await Promise.all([
-        api.get<Paginated<AuditLog>>('/audits', { per_page: 200 }),
+        api.get<Paginated<AuditLog>>('/audits', { per_page: 300 }),
         api.get<{ data: Spec[] }>('/specs', { include_inactive: 1 }),
         api.get<{ data: LabRoom[] }>('/labs', { include_inactive: 1 }),
         api.get<Paginated<AppUser>>('/users', { per_page: 100 }),
@@ -69,7 +72,7 @@ export default function SpecsPage() {
   }, [])
 
   useEffect(() => {
-    void load()
+    void load(true)
   }, [load])
 
   // Count audits per spec and detect labs

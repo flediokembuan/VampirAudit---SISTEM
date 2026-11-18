@@ -63,5 +63,25 @@ class PcAuditCpuTest extends TestCase
             'pc_number' => 'PC-01',
             'cpu_snapshot' => 'Intel Core i5-12400',
         ]);
+
+        $this->postJson('/api/specs', [
+            'ram_gb' => 16,
+            'storage_gb' => 512,
+            'storage_type' => 'SSD',
+            'cpu' => 'AMD Ryzen 7 5700X',
+            'standby_watt' => 7.0,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.cpu', 'AMD Ryzen 7 5700X');
+
+        $this->postJson('/api/specs', [
+            'ram_gb' => 16,
+            'storage_gb' => 512,
+            'storage_type' => 'SSD',
+            'cpu' => 'Intel Core i5-12400',
+            'standby_watt' => 6.5,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('ram_gb');
     }
 }

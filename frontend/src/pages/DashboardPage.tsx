@@ -9,7 +9,7 @@ import {
   Shield,
   Zap,
 } from 'lucide-react'
-import { api, firstError } from '../lib/api'
+import { api, clearApiCache, firstError } from '../lib/api'
 import { number, rupiah } from '../lib/format'
 import type { AdminDashboard, PanelStatus } from '../types'
 import { ErrorState, Modal, PageLoader, ProgressBar } from '../components/ui'
@@ -31,7 +31,10 @@ export default function DashboardPage() {
   const [incidentError, setIncidentError] = useState('')
 
   const load = useCallback(async (silent = false, notify = false) => {
-    if (!silent) setRefreshing(true)
+    if (!silent) {
+      clearApiCache()
+      setRefreshing(true)
+    }
     try {
       const response = await api.get<AdminDashboard>('/dashboard')
       setData(response)
@@ -46,7 +49,7 @@ export default function DashboardPage() {
   }, [toast])
 
   useEffect(() => {
-    void load()
+    void load(true)
     const timer = window.setInterval(() => void load(true), 30000)
     return () => window.clearInterval(timer)
   }, [load])
