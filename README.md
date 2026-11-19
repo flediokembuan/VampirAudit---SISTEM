@@ -251,7 +251,7 @@ Ringkasan rancangan; detail lengkap tertera pada dokumen SRS:
 | Activity dan sequence diagram | SRS Bagian 6.4 dan 7.1 | AD-01 s.d. AD-08 & SD-01 s.d. SD-08 (Halaman 23–38) |
 | Class diagram | SRS Bagian 7.2 (Halaman 38–41) | `docs/diagrams/class_diagram.png` |
 | Model data (ERD) dan kamus data | SRS Bagian 8 (Halaman 41–43) | `docs/diagrams/erd_data_model.png` (7 Tabel Utama) |
-| Prototipe UI | SRS Bagian 9 (Halaman 43–50) | [Google Stitch Project](https://stitch.google.com/projects/1475919140937090940) |
+| Prototipe UI | SRS Bagian 9 (Halaman 43–50) | [Figma Project](https://www.figma.com/design/aA82Q4acYYYCiQ2SJ6VglT/VampirAudit--prototype-?node-id=0-1&t=gVgbNNth8GJ5PIkJ-1) |
 
 ![Class diagram](docs/diagrams/class_diagram.png)
 
