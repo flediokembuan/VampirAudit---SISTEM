@@ -12,7 +12,7 @@ Sistem informasi berbasis web (*client-server*) untuk pemantauan dan audit efisi
 | **Objek / studi kasus** | 6 Ruang Laboratorium Komputer dan Fasilitas, Universitas Klabat (UNKLAB) |
 | **Model SDLC** | Incremental Model (4 Increment berurutan + Integrasi & Pengujian Akhir) |
 | **Dokumen SRS** | [docs/SAD_FP_Sistem_Audit_Listrik_Vampir_SRS.pdf](docs/SAD_FP_Sistem_Audit_Listrik_Vampir_SRS.pdf) |
-| **Prototipe UI** | [https://stitch.google.com/projects/1475919140937090940](https://stitch.google.com/projects/1475919140937090940) |
+| **Prototipe UI** | [https://www.figma.com/design/aA82Q4acYYYCiQ2SJ6VglT/VampirAudit--prototype-?node-id=0-1&t=gVgbNNth8GJ5PIkJ-1](https://www.figma.com/design/aA82Q4acYYYCiQ2SJ6VglT/VampirAudit--prototype-?node-id=0-1&t=gVgbNNth8GJ5PIkJ-1) |
 
 ## Anggota Kelompok
 
