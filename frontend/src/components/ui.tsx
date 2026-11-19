@@ -1,7 +1,28 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { AlertCircle, LoaderCircle, X } from 'lucide-react'
 
 type BadgeTone = 'success' | 'warning' | 'danger' | 'neutral' | 'info' | 'accent'
+
+let supportsDisplayTransition: boolean | undefined
+
+function canTransitionDisplay(): boolean {
+  if (supportsDisplayTransition !== undefined) return supportsDisplayTransition
+  if (typeof window === 'undefined' || !window.CSS?.supports?.('transition-behavior', 'allow-discrete') || !document.body) {
+    return false
+  }
+  const probe = document.createElement('div')
+  probe.style.cssText = 'transition: display 1s allow-discrete !important; display: block;'
+  document.body.appendChild(probe)
+  void getComputedStyle(probe).display
+  probe.style.display = 'none'
+  supportsDisplayTransition = getComputedStyle(probe).display === 'block'
+  probe.remove()
+  return supportsDisplayTransition
+}
+
+function supportsTopLayerExit(): boolean {
+  return Boolean(typeof window !== 'undefined' && window.CSS?.supports?.('overlay', 'auto') && canTransitionDisplay())
+}
 
 export function Badge({
   tone = 'neutral',
@@ -29,10 +50,10 @@ export function ProgressBar({
   tone?: 'accent' | 'success' | 'warning' | 'danger'
   height?: number
 }) {
-  const width = Math.min(Math.max(value, 0), 100)
+  const ratio = Math.min(Math.max(value, 0), 100) / 100
   return (
     <div className="progress-track" style={{ height }}>
-      <div className={`progress-fill progress-${tone}`} style={{ width: `${width}%` }} />
+      <div className={`progress-fill progress-${tone}`} style={{ transform: `scaleX(${ratio})` }} />
     </div>
   )
 }
@@ -81,23 +102,89 @@ export function Modal({
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
+  const [shouldRender, setShouldRender] = useState(open)
+  const openRef = useRef(open)
 
   useEffect(() => {
-    const dialog = dialogRef.current
-    if (!dialog) return
-    if (open) {
-      if (!dialog.open) dialog.showModal()
-    } else if (dialog.open) {
-      dialog.close()
-    }
+    openRef.current = open
   }, [open])
 
+  if (open && !shouldRender) {
+    setShouldRender(true)
+  }
+
   useEffect(() => {
     const dialog = dialogRef.current
     if (!dialog) return
+
+    if (open) {
+      dialog.removeAttribute('data-closing')
+      if (!dialog.open) dialog.showModal()
+      return
+    }
+
+    if (!dialog.open) {
+      if (!shouldRender) return
+      const timer = window.setTimeout(() => setShouldRender(false), 260)
+      return () => window.clearTimeout(timer)
+    }
+
+    if (supportsTopLayerExit()) {
+      dialog.close()
+      const timer = window.setTimeout(() => setShouldRender(false), 260)
+      return () => window.clearTimeout(timer)
+    }
+
+    let cancelled = false
+    dialog.setAttribute('data-closing', '')
+    const animations = dialog.getAnimations({ subtree: true })
+    const finishClose = () => {
+      if (cancelled || openRef.current) return
+      if (dialog.hasAttribute('data-closing')) {
+        dialog.removeAttribute('data-closing')
+        if (dialog.open) dialog.close()
+      }
+      setShouldRender(false)
+    }
+
+    if (animations.length === 0) {
+      const timer = window.setTimeout(finishClose, 0)
+      return () => {
+        cancelled = true
+        window.clearTimeout(timer)
+      }
+    }
+
+    let timer: number | undefined
+    void Promise.race([
+      Promise.allSettled(animations.map((anim) => anim.finished)),
+      new Promise<void>((resolve) => {
+        timer = window.setTimeout(resolve, 400)
+      }),
+    ]).then(finishClose)
+
+    return () => {
+      cancelled = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [open, shouldRender])
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    const handleCancel = (event: Event) => {
+      if (!supportsTopLayerExit()) {
+        event.preventDefault()
+        if (open) onClose()
+      }
+    }
+
     const handleClose = () => {
       if (open) onClose()
     }
+
+    dialog.addEventListener('cancel', handleCancel)
     dialog.addEventListener('close', handleClose)
 
     // Fallback for browsers without <dialog closedby="any">
@@ -117,8 +204,8 @@ export function Modal({
         pressedOutside = isOutside(event)
       }
       const onPointerUp = (event: PointerEvent) => {
-        if (pressedOutside && isOutside(event)) {
-          dialog.close()
+        if (pressedOutside && isOutside(event) && open) {
+          onClose()
         }
         pressedOutside = false
       }
@@ -131,6 +218,7 @@ export function Modal({
     }
 
     return () => {
+      dialog.removeEventListener('cancel', handleCancel)
       dialog.removeEventListener('close', handleClose)
       cleanupFallback?.()
     }
@@ -143,7 +231,7 @@ export function Modal({
       aria-labelledby={titleId}
       {...({ closedby: 'any' } as Record<string, string>)}
     >
-      {open && (
+      {shouldRender && (
         <>
           <header className="modal-head">
             <div>

@@ -63,6 +63,16 @@
   --shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 20px 48px -8px rgba(0, 0, 0, 0.7);
 
+  /* Motion Tokens */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-press: 160ms;
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-modal: 250ms;
+  --duration-toast: 400ms;
+
   color-scheme: dark;
 }
 
@@ -98,10 +108,13 @@ body {
 a {
   color: var(--primary-mint);
   text-decoration: none;
-  transition: color 0.15s ease;
+  transition: color 150ms ease;
 }
-a:hover {
-  color: var(--text-primary);
+
+@media (hover: hover) and (pointer: fine) {
+  a:hover {
+    color: var(--text-primary);
+  }
 }
 
 button, input, select, textarea {
@@ -272,7 +285,7 @@ code, .mono {
   text-decoration: none;
   border-bottom: 2.5px solid transparent;
   border-top: 2.5px solid transparent;
-  transition: all 0.15s ease;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
   white-space: nowrap;
   text-align: center;
   line-height: 1.25;
@@ -287,9 +300,11 @@ code, .mono {
   font-weight: 700;
 }
 
-.nav-tab:hover {
-  color: var(--text-primary);
-  background-color: rgba(255, 255, 255, 0.025);
+@media (hover: hover) and (pointer: fine) {
+  .nav-tab:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.025);
+  }
 }
 
 .nav-tab.active {
@@ -360,14 +375,24 @@ code, .mono {
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform var(--duration-press) var(--ease-out);
   white-space: nowrap;
 }
 
-.logout-btn:hover {
-  border-color: var(--danger-border);
-  color: #fca5a5;
-  background-color: var(--danger-soft);
+.logout-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .logout-btn:hover {
+    border-color: var(--danger-border);
+    color: #fca5a5;
+    background-color: var(--danger-soft);
+  }
 }
 
 /* Keep legacy compat aliases */
@@ -435,13 +460,15 @@ code, .mono {
   color: var(--text-muted);
   text-decoration: none;
   border-bottom: 2px solid transparent;
-  transition: all 0.15s ease;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
   white-space: nowrap;
 }
 
-.subnav-link:hover {
-  color: var(--text-primary);
-  background-color: rgba(255, 255, 255, 0.02);
+@media (hover: hover) and (pointer: fine) {
+  .subnav-link:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.02);
+  }
 }
 
 .subnav-link.active {
@@ -548,13 +575,18 @@ code, .mono {
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease,
+    transform var(--duration-press) var(--ease-out);
   cursor: pointer;
   border: 1px solid transparent;
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 /* Primary Button: Solid Mint / Emerald */
@@ -565,21 +597,12 @@ code, .mono {
   border-color: #10b981;
   box-shadow: 0 2px 10px rgba(16, 185, 129, 0.25);
 }
-.btn-primary:hover:not(:disabled) {
-  background-color: #4edea3;
-  border-color: #4edea3;
-  color: #08090b;
-}
 
 /* Secondary Button: Subtle Surface */
 .btn-secondary {
   background-color: #181a1d;
   color: var(--text-primary);
   border: 1px solid var(--border);
-}
-.btn-secondary:hover:not(:disabled) {
-  background-color: #24272c;
-  border-color: #383d45;
 }
 
 /* Danger Button */
@@ -588,9 +611,23 @@ code, .mono {
   color: #fca5a5;
   border: 1px solid var(--danger-border);
 }
-.btn-danger:hover:not(:disabled) {
-  background-color: rgba(239, 68, 68, 0.25);
-  color: #ffffff;
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled) {
+    background-color: #4edea3;
+    border-color: #4edea3;
+    color: #08090b;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background-color: #24272c;
+    border-color: #383d45;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background-color: rgba(239, 68, 68, 0.25);
+    color: #ffffff;
+  }
 }
 
 .btn-sm {
@@ -619,11 +656,19 @@ code, .mono {
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   background-color: transparent;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform var(--duration-press) var(--ease-out);
 }
-.icon-btn:hover {
-  background-color: #24272c;
-  color: var(--text-primary);
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .icon-btn:hover {
+    background-color: #24272c;
+    color: var(--text-primary);
+  }
 }
 
 /* ==========================================================================
@@ -831,9 +876,11 @@ code, .mono {
 }
 
 .progress-fill {
+  width: 100%;
   height: 100%;
   border-radius: var(--radius-full);
-  transition: width 0.4s ease;
+  transform-origin: left center;
+  transition: transform 250ms var(--ease-out);
 }
 
 .progress-accent, .progress-success {
@@ -887,11 +934,13 @@ code, .mono {
 }
 
 .data-table tbody tr {
-  transition: background-color 0.12s ease;
+  transition: background-color 120ms ease;
 }
 
-.data-table tbody tr:hover {
-  background-color: #1c1f24;
+@media (hover: hover) and (pointer: fine) {
+  .data-table tbody tr:hover {
+    background-color: #1c1f24;
+  }
 }
 
 .data-table tbody tr:last-child td {
@@ -942,12 +991,22 @@ code, .mono {
   font-weight: 600;
   color: var(--text-muted);
   background: transparent;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease,
+    transform var(--duration-press) var(--ease-out);
   white-space: nowrap;
 }
 
-.tab:hover {
-  color: var(--text-primary);
+.tab:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover {
+    color: var(--text-primary);
+  }
 }
 
 .tab.active {
@@ -1047,9 +1106,12 @@ select.input {
   color: var(--text-faint);
   padding: 4px;
   border-radius: var(--radius-sm);
+  transition: color 150ms ease;
 }
-.password-toggle:hover {
-  color: var(--text-primary);
+@media (hover: hover) and (pointer: fine) {
+  .password-toggle:hover {
+    color: var(--text-primary);
+  }
 }
 
 /* ==========================================================================
@@ -1319,12 +1381,19 @@ select.input {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    transform var(--duration-press) var(--ease-out);
   box-shadow: 0 4px 16px rgba(78, 222, 163, 0.25);
 }
-.login-submit-btn:hover:not(:disabled) {
-  background-color: #6ffbbe;
-  transform: translateY(-1px);
+.login-submit-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .login-submit-btn:hover:not(:disabled) {
+    background-color: #6ffbbe;
+  }
 }
 
 /* RBAC Simulation Section */
@@ -1361,13 +1430,22 @@ select.input {
   border-radius: var(--radius-md);
   padding: 10px 12px;
   text-align: left;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform var(--duration-press) var(--ease-out);
   cursor: pointer;
 }
 
-.rbac-demo-card:hover {
-  border-color: #3f4752;
-  background-color: #191c21;
+.rbac-demo-card:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rbac-demo-card:hover {
+    border-color: #3f4752;
+    background-color: #191c21;
+  }
 }
 
 .rbac-demo-card.selected {
@@ -1514,12 +1592,14 @@ select.input {
   gap: 12px;
   text-decoration: none;
   color: inherit;
-  transition: all 0.15s ease;
+  transition: border-color 150ms ease, background-color 150ms ease;
 }
 
-.lab-card:hover {
-  border-color: #3f4752;
-  background-color: #1c1f24;
+@media (hover: hover) and (pointer: fine) {
+  .lab-card:hover {
+    border-color: #3f4752;
+    background-color: #1c1f24;
+  }
 }
 
 .lab-card.critical {
@@ -1589,7 +1669,15 @@ select.input {
   background-color: #212429;
   border: 1px solid var(--border);
   color: var(--text-muted);
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    transform var(--duration-press) var(--ease-out);
+}
+
+.lab-card-action-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .lab-card.critical .lab-card-action-btn {
@@ -1680,11 +1768,20 @@ select.input {
   background-color: #1b1e23;
   border: 1.5px solid var(--border);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform var(--duration-press) var(--ease-out);
 }
 
-.condition-select-card:hover {
-  border-color: #383e47;
+.condition-select-card:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .condition-select-card:hover {
+    border-color: #383e47;
+  }
 }
 
 .condition-select-card.selected-normal {
@@ -1880,9 +1977,48 @@ select.input {
   overflow: hidden;
 }
 
+dialog.modal {
+  transform-origin: center;
+  opacity: 0;
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: var(--duration-modal);
+  transition-timing-function: var(--ease-out);
+  transition-behavior: allow-discrete;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.modal {
+    transform: scale(0.96);
+  }
+}
+
 dialog.modal[open] {
   display: flex;
   flex-direction: column;
+}
+
+dialog.modal[open]:where(:not([data-closing])) {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.modal[open]:where(:not([data-closing])) {
+    transform: scale(1);
+  }
+}
+
+@starting-style {
+  dialog.modal[open]:where(:not([data-closing])) {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @starting-style {
+    dialog.modal[open]:where(:not([data-closing])) {
+      transform: scale(0.96);
+    }
+  }
 }
 
 dialog.modal:modal {
@@ -1894,6 +2030,21 @@ dialog.modal::backdrop {
   backdrop-filter: blur(8px);
   overflow: hidden;
   overscroll-behavior: contain;
+  opacity: 0;
+  transition-property: opacity, display, overlay;
+  transition-duration: var(--duration-modal);
+  transition-timing-function: var(--ease-out);
+  transition-behavior: allow-discrete;
+}
+
+dialog.modal[open]:where(:not([data-closing]))::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  dialog.modal[open]:where(:not([data-closing]))::backdrop {
+    opacity: 0;
+  }
 }
 
 .modal.modal-wide {
@@ -2037,8 +2188,17 @@ dialog.modal::backdrop {
   font-weight: 700;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms var(--ease-out);
   user-select: none;
+}
+
+.pc-grid-cell:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .pc-grid-cell.off {
@@ -2134,14 +2294,23 @@ dialog.modal::backdrop {
   border-radius: var(--radius-lg);
   padding: 14px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform var(--duration-press) var(--ease-out);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
 }
 
-.audit-trio-card:hover {
-  border-color: #3b424c;
+.audit-trio-card:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .audit-trio-card:hover {
+    border-color: #3b424c;
+  }
 }
 
 .audit-trio-card.active-green {
@@ -2357,11 +2526,13 @@ dialog.modal::backdrop {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  transition: border-color 0.15s ease;
+  transition: border-color 150ms ease;
 }
 
-.mcb-card-box:hover {
-  border-color: #3f4752;
+@media (hover: hover) and (pointer: fine) {
+  .mcb-card-box:hover {
+    border-color: #3f4752;
+  }
 }
 
 .mcb-card-box.tripped {
@@ -2462,8 +2633,10 @@ dialog.modal::backdrop {
   vertical-align: middle;
 }
 
-.spec-catalog-table tbody tr:hover {
-  background-color: #1c1f24;
+@media (hover: hover) and (pointer: fine) {
+  .spec-catalog-table tbody tr:hover {
+    background-color: #1c1f24;
+  }
 }
 
 .spec-catalog-table tbody tr:last-child td {
@@ -2675,8 +2848,17 @@ dialog.modal::backdrop {
   font-weight: 700;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms var(--ease-out);
   user-select: none;
+}
+
+.denah-pc-cell:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .denah-pc-cell.off      { background-color: rgba(16, 185, 129, 0.18); color: #10b981; border-color: rgba(16, 185, 129, 0.35); }
@@ -2723,6 +2905,24 @@ dialog.modal::backdrop {
   color: var(--text-primary);
   font-size: 12.5px;
   line-height: 1.4;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--duration-toast) ease,
+    transform var(--duration-toast) ease;
+}
+
+@starting-style {
+  .toast {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+.toast[data-closing='true'] {
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
 }
 
 .toast-success {
@@ -2762,11 +2962,14 @@ dialog.modal::backdrop {
   place-items: center;
   padding: 2px;
   border-radius: 4px;
+  transition: color 150ms ease, background-color 150ms ease;
 }
 
-.toast-close:hover {
-  color: var(--text-primary);
-  background-color: rgba(255, 255, 255, 0.06);
+@media (hover: hover) and (pointer: fine) {
+  .toast-close:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.06);
+  }
 }
 
 .splash,
@@ -2869,9 +3072,11 @@ dialog.modal::backdrop {
   border: 1px solid transparent;
 }
 
-.btn-ghost:hover:not(:disabled) {
-  background-color: #24272c;
-  color: var(--text-primary);
+@media (hover: hover) and (pointer: fine) {
+  .btn-ghost:hover:not(:disabled) {
+    background-color: #24272c;
+    color: var(--text-primary);
+  }
 }
 
 .info-banner {
@@ -3400,9 +3605,11 @@ dialog.modal::backdrop {
   color: #f87171;
 }
 
-.icon-btn.danger:hover {
-  background-color: var(--danger-soft);
-  color: #fca5a5;
+@media (hover: hover) and (pointer: fine) {
+  .icon-btn.danger:hover {
+    background-color: var(--danger-soft);
+    color: #fca5a5;
+  }
 }
 
 .toggle-row {
@@ -3436,4 +3643,208 @@ dialog.modal::backdrop {
   display: block;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* ==========================================================================
+   MOTION UTILITIES & REDUCED MOTION
+   ========================================================================== */
+
+.pressable {
+  transition: transform var(--duration-press) var(--ease-out);
+}
+
+.pressable:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.incident-report-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background-color: #191d24;
+  border: 1px solid #2e3540;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform var(--duration-press) var(--ease-out);
+}
+
+.incident-report-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .incident-report-btn:hover:not(:disabled) {
+    background-color: #242b36;
+    border-color: #475569;
+  }
+}
+
+.login-role-btn {
+  background-color: transparent;
+  border: 1px solid #1e2430;
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform var(--duration-press) var(--ease-out);
+}
+
+.login-role-btn[data-selected='true'] {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+.login-role-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .login-role-btn:hover:not([data-selected='true']) {
+    background-color: #151b26;
+    border-color: #2b3444;
+  }
+}
+
+.login-submit-primary {
+  transition:
+    opacity 150ms ease,
+    transform var(--duration-press) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .login-submit-primary:hover:not(:disabled) {
+    opacity: 0.92;
+  }
+}
+
+.login-reset-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 10.5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .login-reset-btn:hover {
+    color: #38bdf8;
+  }
+}
+
+.anomaly-reveal {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+@starting-style {
+  .anomaly-reveal {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.login-stagger {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: vampir-enter 300ms var(--ease-out) forwards;
+}
+
+@keyframes vampir-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vampir-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  dialog.modal,
+  dialog.modal::backdrop {
+    transition-duration: 150ms;
+  }
+
+  .toast {
+    transition-duration: 200ms;
+    transform: none;
+  }
+
+  .toast[data-closing='true'] {
+    transform: none;
+  }
+
+  @starting-style {
+    .toast {
+      transform: none;
+    }
+
+    .anomaly-reveal {
+      transform: none;
+    }
+  }
+
+  .anomaly-reveal {
+    transform: none;
+    transition-duration: 150ms;
+  }
+
+  .login-stagger {
+    animation-name: vampir-fade;
+    animation-duration: 200ms;
+    transform: none;
+  }
+
+  .progress-fill {
+    transition: none;
+  }
+
+  .spin {
+    animation-duration: 2.4s;
+  }
+
+  .btn:active:not(:disabled),
+  .icon-btn:active:not(:disabled),
+  .logout-btn:active:not(:disabled),
+  .tab:active:not(:disabled),
+  .login-submit-btn:active:not(:disabled),
+  .rbac-demo-card:active:not(:disabled),
+  .lab-card-action-btn:active:not(:disabled),
+  .condition-select-card:active:not(:disabled),
+  .pc-grid-cell:active:not(:disabled),
+  .denah-pc-cell:active:not(:disabled),
+  .audit-trio-card:active:not(:disabled),
+  .pressable:active:not(:disabled),
+  .incident-report-btn:active:not(:disabled),
+  .login-role-btn:active:not(:disabled) {
+    transform: none !important;
+  }
 }
