@@ -4,6 +4,7 @@ Sistem informasi berbasis web (*client-server*) untuk pemantauan dan audit efisi
 
 ![Halaman utama](docs/screenshots/01_halaman_utama.png)
 
+
 | | |
 |---|---|
 | **Mata kuliah** | System Analysis and Design — Fakultas Ilmu Komputer, Universitas Klabat |
