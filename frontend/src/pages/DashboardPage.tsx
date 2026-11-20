@@ -539,20 +539,7 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => openIncidentModal(lab.id)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                    background: '#191d24', border: '1px solid #2e3540', borderRadius: '8px',
-                    padding: '8px 12px', fontSize: '11.5px', fontWeight: 700, color: '#e2e8f0',
-                    cursor: 'pointer', transition: 'all 0.15s ease',
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.background = '#242b36'
-                    e.currentTarget.style.borderColor = '#475569'
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.background = '#191d24'
-                    e.currentTarget.style.borderColor = '#2e3540'
-                  }}
+                  className="incident-report-btn"
                 >
                   <Lock size={12} style={{ color: '#94a3b8' }} />
                   + Kirim Report Incident Tegangan

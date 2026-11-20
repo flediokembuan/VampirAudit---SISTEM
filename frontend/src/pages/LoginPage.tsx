@@ -168,15 +168,18 @@ export default function LoginPage() {
           {/* ══════════════════════════════════════════════════════════
               LEFT COLUMN: Institutional Scope & Methodology
               ══════════════════════════════════════════════════════════ */}
-          <div style={{
-            backgroundColor: '#111316',
-            border: '1px solid #1e2430',
-            borderRadius: '14px',
-            padding: '28px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '20px',
-          }}>
+          <div
+            className="login-stagger"
+            style={{
+              backgroundColor: '#111316',
+              border: '1px solid #1e2430',
+              borderRadius: '14px',
+              padding: '28px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+            }}
+          >
             
             {/* Tag badge */}
             <div>
@@ -288,16 +291,9 @@ export default function LoginPage() {
                 {/* Role 1: Dosen PJ / Admin */}
                 <button
                   type="button"
+                  className="login-role-btn"
+                  data-selected={email === 'dosen.admin@unklab.ac.id' ? 'true' : undefined}
                   onClick={() => handleRoleClick('dosen.admin@unklab.ac.id')}
-                  style={{
-                    background: email === 'dosen.admin@unklab.ac.id' ? '#1e293b' : 'transparent',
-                    border: '1px solid #1e2430',
-                    borderRadius: '8px',
-                    padding: '8px 10px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#38bdf8' }} />
@@ -311,16 +307,9 @@ export default function LoginPage() {
                 {/* Role 2: Auditor Lapangan */}
                 <button
                   type="button"
+                  className="login-role-btn"
+                  data-selected={email === 'auditor@unklab.ac.id' ? 'true' : undefined}
                   onClick={() => handleRoleClick('auditor@unklab.ac.id')}
-                  style={{
-                    background: email === 'auditor@unklab.ac.id' ? '#1e293b' : 'transparent',
-                    border: '1px solid #1e2430',
-                    borderRadius: '8px',
-                    padding: '8px 10px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#34d399' }} />
@@ -334,16 +323,9 @@ export default function LoginPage() {
                 {/* Role 3: Facility Maintenance */}
                 <button
                   type="button"
+                  className="login-role-btn"
+                  data-selected={email === 'maintenance@unklab.ac.id' ? 'true' : undefined}
                   onClick={() => handleRoleClick('maintenance@unklab.ac.id')}
-                  style={{
-                    background: email === 'maintenance@unklab.ac.id' ? '#1e293b' : 'transparent',
-                    border: '1px solid #1e2430',
-                    borderRadius: '8px',
-                    padding: '8px 10px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f97316' }} />
@@ -357,16 +339,9 @@ export default function LoginPage() {
                 {/* Role 4: Pimpinan Kampus */}
                 <button
                   type="button"
+                  className="login-role-btn"
+                  data-selected={email === 'pimpinan@unklab.ac.id' ? 'true' : undefined}
                   onClick={() => handleRoleClick('pimpinan@unklab.ac.id')}
-                  style={{
-                    background: email === 'pimpinan@unklab.ac.id' ? '#1e293b' : 'transparent',
-                    border: '1px solid #1e2430',
-                    borderRadius: '8px',
-                    padding: '8px 10px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#a78bfa' }} />
@@ -384,7 +359,7 @@ export default function LoginPage() {
           {/* ══════════════════════════════════════════════════════════
               RIGHT COLUMN: Login Form + Demo Simulator State
               ══════════════════════════════════════════════════════════ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="login-stagger" style={{ display: 'flex', flexDirection: 'column', gap: '16px', animationDelay: '50ms' }}>
             
             {/* ── Top Box: Masuk ke Sistem Form ── */}
             <div style={{
@@ -526,6 +501,7 @@ export default function LoginPage() {
                 {/* Submit Button */}
                 <button
                   type="submit"
+                  className="pressable login-submit-primary"
                   disabled={submitting}
                   style={{
                     marginTop: '4px',
@@ -543,10 +519,7 @@ export default function LoginPage() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '8px',
-                    transition: 'opacity 0.15s ease',
                   }}
-                  onMouseOver={(e) => { if (!submitting) e.currentTarget.style.opacity = '0.92' }}
-                  onMouseOut={(e) => { e.currentTarget.style.opacity = '1' }}
                 >
                   <span>→]</span>
                   <span>{submitting ? 'Memverifikasi Kredensial...' : 'Masuk ke Sistem →'}</span>
@@ -604,6 +577,7 @@ export default function LoginPage() {
                 {/* State 1 */}
                 <button
                   type="button"
+                  className="pressable"
                   onClick={() => handleSimulate('invalid_credentials')}
                   style={{
                     backgroundColor: simState === 'invalid_credentials' ? '#1e2430' : '#0d0f12',
@@ -612,6 +586,7 @@ export default function LoginPage() {
                     padding: '8px 10px',
                     textAlign: 'left',
                     cursor: 'pointer',
+                    transition: 'background-color 150ms ease, border-color 150ms ease, transform var(--duration-press) var(--ease-out)',
                   }}
                 >
                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#f87171' }}>⊗ State 1</div>
@@ -621,6 +596,7 @@ export default function LoginPage() {
                 {/* State 2 */}
                 <button
                   type="button"
+                  className="pressable"
                   onClick={() => handleSimulate('account_locked')}
                   style={{
                     backgroundColor: simState === 'account_locked' ? '#1e2430' : '#0d0f12',
@@ -629,6 +605,7 @@ export default function LoginPage() {
                     padding: '8px 10px',
                     textAlign: 'left',
                     cursor: 'pointer',
+                    transition: 'background-color 150ms ease, border-color 150ms ease, transform var(--duration-press) var(--ease-out)',
                   }}
                 >
                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#fbbf24' }}>⚙ State 2</div>
@@ -638,6 +615,7 @@ export default function LoginPage() {
                 {/* State 3 */}
                 <button
                   type="button"
+                  className="pressable"
                   onClick={() => handleSimulate('empty_fields')}
                   style={{
                     backgroundColor: simState === 'empty_fields' ? '#1e2430' : '#0d0f12',
@@ -646,6 +624,7 @@ export default function LoginPage() {
                     padding: '8px 10px',
                     textAlign: 'left',
                     cursor: 'pointer',
+                    transition: 'background-color 150ms ease, border-color 150ms ease, transform var(--duration-press) var(--ease-out)',
                   }}
                 >
                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#38bdf8' }}>=✗ State 3</div>
@@ -655,6 +634,7 @@ export default function LoginPage() {
                 {/* State 4 */}
                 <button
                   type="button"
+                  className="pressable"
                   onClick={() => handleSimulate('loading')}
                   style={{
                     backgroundColor: simState === 'loading' ? '#1e2430' : '#0d0f12',
@@ -663,6 +643,7 @@ export default function LoginPage() {
                     padding: '8px 10px',
                     textAlign: 'left',
                     cursor: 'pointer',
+                    transition: 'background-color 150ms ease, border-color 150ms ease, transform var(--duration-press) var(--ease-out)',
                   }}
                 >
                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#34d399' }}>↻ State 4</div>
@@ -674,19 +655,8 @@ export default function LoginPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
                 <button
                   type="button"
+                  className="login-reset-btn"
                   onClick={() => handleSimulate('normal')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#64748b',
-                    fontSize: '10.5px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                  onMouseOver={(e) => (e.currentTarget.style.color = '#38bdf8')}
-                  onMouseOut={(e) => (e.currentTarget.style.color = '#64748b')}
                 >
                   <RotateCcw size={11} />
                   <span>Reset ke Form Awal</span>

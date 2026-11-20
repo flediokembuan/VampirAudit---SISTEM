@@ -522,17 +522,18 @@ export default function AuditPage() {
                     width: '44px', height: '24px', borderRadius: '12px',
                     background: isFaulty ? '#ef4444' : '#374151',
                     border: 'none', cursor: 'pointer', position: 'relative', flexShrink: 0,
-                    transition: 'background 0.2s',
+                    transition: 'background-color 200ms ease',
                   }}
                   aria-pressed={isFaulty}
                   aria-label="Toggle unit rusak"
                 >
                   <span style={{
                     position: 'absolute', top: '3px',
-                    left: isFaulty ? '23px' : '3px',
+                    left: '3px',
                     width: '18px', height: '18px',
                     borderRadius: '50%', background: '#ffffff',
-                    transition: 'left 0.2s',
+                    transform: isFaulty ? 'translateX(20px)' : 'translateX(0)',
+                    transition: 'transform 200ms var(--ease-in-out)',
                   }} />
                 </button>
               </div>
@@ -543,7 +544,7 @@ export default function AuditPage() {
 
             {/* Anomaly sub-form when faulty */}
             {isFaulty && (
-              <div style={{ marginTop: '10px', background: '#1a0a0a', border: '1px solid #7f1d1d', borderRadius: '10px', padding: '10px 12px' }}>
+              <div className="anomaly-reveal" style={{ marginTop: '10px', background: '#1a0a0a', border: '1px solid #7f1d1d', borderRadius: '10px', padding: '10px 12px' }}>
                 <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#fca5a5', marginBottom: '8px' }}>
                   Detail Kerusakan
                 </div>

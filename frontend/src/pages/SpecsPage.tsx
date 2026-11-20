@@ -248,6 +248,7 @@ export default function SpecsPage() {
       <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #1e2229', paddingBottom: '12px' }}>
         <button
           type="button"
+          className="pressable"
           onClick={() => setActiveTab('SPECS')}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '8px',
@@ -255,7 +256,8 @@ export default function SpecsPage() {
             color: activeTab === 'SPECS' ? '#ffffff' : '#64748b',
             border: `1px solid ${activeTab === 'SPECS' ? '#334155' : '#1e2229'}`,
             borderRadius: '10px', padding: '10px 18px', fontSize: '12.5px', fontWeight: 700,
-            cursor: 'pointer', transition: 'all 0.15s ease',
+            cursor: 'pointer',
+            transition: 'background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 160ms var(--ease-out)',
           }}
         >
           <Cpu size={15} style={{ color: activeTab === 'SPECS' ? '#38bdf8' : '#64748b' }} />
@@ -271,6 +273,7 @@ export default function SpecsPage() {
 
         <button
           type="button"
+          className="pressable"
           onClick={() => setActiveTab('RBAC')}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '8px',
@@ -278,7 +281,8 @@ export default function SpecsPage() {
             color: activeTab === 'RBAC' ? '#ffffff' : '#64748b',
             border: `1px solid ${activeTab === 'RBAC' ? '#334155' : '#1e2229'}`,
             borderRadius: '10px', padding: '10px 18px', fontSize: '12.5px', fontWeight: 700,
-            cursor: 'pointer', transition: 'all 0.15s ease',
+            cursor: 'pointer',
+            transition: 'background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 160ms var(--ease-out)',
           }}
         >
           <Users size={15} style={{ color: activeTab === 'RBAC' ? '#4ade80' : '#64748b' }} />
